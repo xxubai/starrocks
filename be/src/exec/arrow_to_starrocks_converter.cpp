@@ -721,6 +721,7 @@ struct ArrowConverter<AT, LT, is_nullable, is_strict, JsonGuard<LT>> {
                         [[maybe_unused]] Filter* chunk_filter, ArrowConvertContext* ctx,
                         [[maybe_unused]] ConvertFuncTree* conv_func) {
         auto* json_column = down_cast<JsonColumn*>(column);
+        // 预先分配足够的内存，以容纳即将追加的元素数
         json_column->reserve(column->size() + num_elements);
 
         return convert_arrow_to_json(array, json_column, array_start_idx, num_elements);

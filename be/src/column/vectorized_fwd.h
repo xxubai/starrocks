@@ -17,6 +17,7 @@
 #include <memory>
 #include <vector>
 
+#include "variant.h"
 #include "runtime/memory/column_allocator.h"
 
 namespace starrocks {
@@ -100,6 +101,9 @@ using BitmapColumn = ObjectColumn<BitmapValue>;
 using PercentileColumn = ObjectColumn<PercentileValue>;
 using JsonColumnBase = ObjectColumn<JsonValue>;
 class JsonColumn;
+
+using VariantColumnBase = ObjectColumn<Variant>;
+class VariantColumn;
 
 class MapColumn;
 class StructColumn;
