@@ -357,7 +357,12 @@ class ParquetScannerTest : public ::testing::Test {
                                        388199, /*"/test_data/parquet_data/data_4097.parquet",*/
                                        773729, /*"/test_data/parquet_data/data_8191.parquet",*/
                                        772472, /*"/test_data/parquet_data/data_8192.parquet",*/
-                                       775318 /*"/test_data/parquet_data/data_8193.parquet"*/};
+                                       775318, /*"/test_data/parquet_data/data_8193.parquet"*/};
+        // 869,    /*"/test_data/parquet_data/variant_primitive.parquet"*/
+        // 2183    /*"/test_data/parquet_data/variant_array_simple.parquet"*/
+        _variant_file_names =
+                std::vector<std::string>{test_exec_dir + "/test_data/parquet_data/variant_primitive.parquet",
+                                         test_exec_dir + "/test_data/parquet_data/variant_array_simple.parquet"};
         _runtime_state = _obj_pool.add(new RuntimeState(TQueryGlobals()));
         _issue_16475_file_names =
                 std::vector<std::string>{test_exec_dir + "/test_data/parquet_data/issue_17693_1.parquet",
@@ -376,6 +381,7 @@ private:
     std::vector<std::string> _file_names;
     std::vector<std::string> _nullable_file_names;
     std::vector<int> _file_sizes;
+    std::vector<std::string> _variant_file_names;
     std::vector<std::string> _issue_16475_file_names;
     std::vector<std::string> _issue_17822_file_names;
     std::vector<std::string> _nested_array_file_names;

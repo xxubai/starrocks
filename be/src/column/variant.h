@@ -35,11 +35,11 @@ enum class VariantPrimitiveType : uint8_t {
     DECIMAL8 = 10,
     DECIMAL16 = 11,
     DATE = 12,
-    TIMESTAMPTZ = 13,
-    TIMESTAMPNTZ = 14,
+    TIMESTAMP_TZ = 13,
+    TIMESTAMP_NTZ = 14,
     TIME = 15,
-    TIMESTAMPTZ_NANOS = 16,
-    TIMESTAMPNTZ_NANOS = 17,
+    TIMESTAMP_TZ_NANOS = 16,
+    TIMESTAMP_NTZ_NANOS = 17,
     BINARY = 18,
     STRING = 19,
     UUID = 20,
@@ -62,11 +62,11 @@ enum class VariantType {
     DECIMAL8,
     DECIMAL16,
     DATE,
-    TIMESTAMPTZ,
-    TIMESTAMPNTZ,
+    TIMESTAMP_TZ,
+    TIMESTAMP_NTZ,
     TIME,
-    TIMESTAMPTZ_NANOS,
-    TIMESTAMPNTZ_NANOS,
+    TIMESTAMP_TZ_NANOS,
+    TIMESTAMP_NTZ_NANOS,
     BINARY,
     STRING,
     UUID
@@ -185,13 +185,14 @@ public:
     /// \brief Get the value of the object field by key.
     /// \return returns the value of the field with the given key, or empty if the key
     ///         doesn't exist.
-    StatusOr<Variant> getObjectValueByKey(std::string_view key) const;
+    StatusOr<Variant> get_object_by_key(std::string_view key) const;
+
     /// \brief Get the value of the object field by field id.
     /// \return returns the value of the field with the given field id, or empty if the
     ///         field id doesn't exist.
-    StatusOr<Variant> getObjectFieldByFieldId(uint32_t variant_id) const;
+    StatusOr<Variant> get_object_by_id(uint32_t id) const;
 
-    StatusOr<Variant> getArrayValueByIndex(uint32_t index) const;
+    StatusOr<Variant> get_array_by_index(uint32_t index) const;
 
 private:
     uint8_t header() const;

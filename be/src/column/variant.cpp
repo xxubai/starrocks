@@ -148,16 +148,16 @@ VariantType Variant::type() const {
                     return VariantType::DECIMAL16;
                 case VariantPrimitiveType::DATE:
                     return VariantType::DATE;
-                case VariantPrimitiveType::TIMESTAMPTZ:
-                    return VariantType::TIMESTAMPTZ;
-                case VariantPrimitiveType::TIMESTAMPNTZ:
-                    return VariantType::TIMESTAMPNTZ;
+                case VariantPrimitiveType::TIMESTAMP_TZ:
+                    return VariantType::TIMESTAMP_TZ;
+                case VariantPrimitiveType::TIMESTAMP_NTZ:
+                    return VariantType::TIMESTAMP_NTZ;
                 case VariantPrimitiveType::TIME:
                     return VariantType::TIME;
-                case VariantPrimitiveType::TIMESTAMPTZ_NANOS:
-                    return VariantType::TIMESTAMPTZ_NANOS;
-                case VariantPrimitiveType::TIMESTAMPNTZ_NANOS:
-                    return VariantType::TIMESTAMPNTZ_NANOS;
+                case VariantPrimitiveType::TIMESTAMP_TZ_NANOS:
+                    return VariantType::TIMESTAMP_TZ_NANOS;
+                case VariantPrimitiveType::TIMESTAMP_NTZ_NANOS:
+                    return VariantType::TIMESTAMP_NTZ_NANOS;
                 case VariantPrimitiveType::BINARY:
                     return VariantType::BINARY;
                 case VariantPrimitiveType::STRING:
@@ -184,8 +184,8 @@ const VariantMetadata& Variant::metadata() const {
 StatusOr<ObjectInfo> get_object_info(std::string_view value) {
     BasicType basic_type = static_cast<BasicType>(static_cast<uint8_t>(value[0]) & Variant::kBasicTypeMask);
     if (basic_type != BasicType::OBJECT) {
-        return Status::JsonFormatError("Cannot read object value as " +
-                            std::to_string(static_cast<int>(basic_type)));
+        return Status::VariantError("Cannot read object value as " +
+                            basic_type_to_string(basic_type));
     }
 
     uint8_t value_header = static_cast<uint8_t>(value[0]) >> Variant::kValueHeaderBitShift;
@@ -201,7 +201,7 @@ StatusOr<ObjectInfo> get_object_info(std::string_view value) {
                                   " for at least " + std::to_string(1 + num_elements_size));
     }
 
-    uint32_t num_elements = readLittleEndianUnsigned(value.data() + 1, num_elements_size);
+    uint32_t num_elements = readLittleEndianUnsigned(value.data() + Variant::kHeaderSizeBytes, num_elements_size);
 
     ObjectInfo object_info{};
     object_info.num_elements = num_elements;
@@ -219,7 +219,7 @@ StatusOr<ObjectInfo> get_object_info(std::string_view value) {
     }
 
     {
-        uint32_t final_offset =
+        const uint32_t final_offset =
             readLittleEndianUnsigned(value.data() + object_info.offset_start_offset +
                                     num_elements * field_offset_size,
                                 field_offset_size);
@@ -236,7 +236,39 @@ StatusOr<ObjectInfo> get_object_info(std::string_view value) {
 }
 
 StatusOr<ArrayInfo> get_array_info(std::string_view value) {
-    return Status::NotSupported("Not implemented");
+    BasicType basic_type = static_cast<BasicType>(static_cast<uint8_t>(value[0]) & Variant::kBasicTypeMask);
+    if (basic_type != BasicType::ARRAY) {
+        return Status::VariantError("Cannot read array value as " +
+                            basic_type_to_string(basic_type));
+    }
+
+    uint8_t value_header = static_cast<uint8_t>(value[0]) >> Variant::kValueHeaderBitShift;
+    // represents the number of bytes used to encode the field offset.
+    uint8_t field_offset_size = (value_header & 0b11) + 1;
+    // is_large is a 1-bit value that indicates how many bytes are used to encode the number of elements.
+    bool is_large = ((value_header >> 2) & 0b1);
+    uint8_t num_elements_size = is_large ? 4 : 1;
+    if (value.size() < static_cast<size_t>(1 + num_elements_size)) {
+        return Status::VariantError("Too short array value: " +
+                                    std::to_string(value.size()) +
+                                    " for at least " + std::to_string(1 + num_elements_size));
+    }
+
+    uint32_t num_elements = readLittleEndianUnsigned(value.data() + Variant::kHeaderSizeBytes, num_elements_size);
+
+    ArrayInfo array_info{};
+    array_info.num_elements = num_elements;
+    array_info.offset_size = field_offset_size;
+    array_info.offset_start_offset = Variant::kHeaderSizeBytes + num_elements_size;
+    array_info.data_start_offset = array_info.offset_start_offset + field_offset_size * (num_elements + 1);
+
+    if (array_info.data_start_offset > value.size()) {
+        return Status::VariantError("Invalid array value: data_start_offset=" +
+                                    std::to_string(array_info.data_start_offset) +
+                                    ", value_size=" + std::to_string(value.size()));
+    }
+
+    return StatusOr<ArrayInfo>(array_info);
 }
 
 std::string basic_type_to_string(BasicType type) {
@@ -282,15 +314,15 @@ std::string primitive_type_to_string(VariantPrimitiveType type) {
             return "Decimal16";
         case VariantPrimitiveType::DATE:
             return "Date";
-        case VariantPrimitiveType::TIMESTAMPTZ:
+        case VariantPrimitiveType::TIMESTAMP_TZ:
             return "TimestampTz";
-        case VariantPrimitiveType::TIMESTAMPNTZ:
+        case VariantPrimitiveType::TIMESTAMP_NTZ:
             return "TimestampNtz";
         case VariantPrimitiveType::TIME:
             return "Time";
-        case VariantPrimitiveType::TIMESTAMPTZ_NANOS:
+        case VariantPrimitiveType::TIMESTAMP_TZ_NANOS:
             return "TimestampTzNanos";
-        case VariantPrimitiveType::TIMESTAMPNTZ_NANOS:
+        case VariantPrimitiveType::TIMESTAMP_NTZ_NANOS:
             return "TimestampNtzNanos";
         case VariantPrimitiveType::BINARY:
             return "Binary";
@@ -343,13 +375,47 @@ PrimitiveType Variant::get_primitive(VariantPrimitiveType type) const {
 
     PrimitiveType primitive_value{};
     memcpy(&primitive_value, value_.data() + kHeaderSizeBytes, sizeof(PrimitiveType));
-    // Here we should cast from Little endian.
     primitive_value = ::arrow::bit_util::FromLittleEndian(primitive_value);
+
     return primitive_value;
 }
 
 StatusOr<bool> Variant::get_bool() const {
+    RETURN_IF_ERROR(validate_basic_type(basic_type()));
 
+    // extract the primitive type from the header
+    VariantPrimitiveType primitive_type = static_cast<VariantPrimitiveType>(header());
+    if (primitive_type == VariantPrimitiveType::BOOLEAN_TRUE) {
+        return true;
+    }
+    if (primitive_type == VariantPrimitiveType::BOOLEAN_FALSE) {
+        return false;
+    }
+
+    return Status::VariantError("Not a variant primitive boolean type with primitive type: " +
+                                primitive_type_to_string(primitive_type));
+}
+
+StatusOr<uint32_t> Variant::num_elements() const {
+    switch (BasicType btype = basic_type()) {
+        case BasicType::OBJECT: {
+            auto status = get_object_info(value_);
+            if (!status.ok()) {
+                return status.status();
+            }
+            return status.value().num_elements;
+        }
+        case BasicType::ARRAY: {
+            auto status = get_array_info(value_);
+            if (!status.ok()) {
+                return status.status();
+            }
+            return status.value().num_elements;
+        }
+        default:
+            return Status::VariantError("Cannot get number of elements for basic type: " +
+                                        basic_type_to_string(btype));
+    }
 }
 
 

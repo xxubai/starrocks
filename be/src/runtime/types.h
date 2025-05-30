@@ -114,6 +114,12 @@ struct TypeDescriptor {
         return res;
     }
 
+    static TypeDescriptor create_variant_type() {
+        TypeDescriptor res;
+        res.type = TYPE_VARIANT;
+        return res;
+    }
+
     static TypeDescriptor create_array_type(const TypeDescriptor& children) {
         TypeDescriptor res;
         res.type = TYPE_ARRAY;
@@ -210,6 +216,8 @@ struct TypeDescriptor {
             return TypeDescriptor::create_decimalv3_type(TYPE_DECIMAL128, precision, scale);
         case TYPE_JSON:
             return TypeDescriptor::create_json_type();
+        case TYPE_VARIANT:
+            return TypeDescriptor::create_variant_type();
         case TYPE_OBJECT:
             return TypeDescriptor::create_bitmap_type();
         default:

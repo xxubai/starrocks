@@ -133,7 +133,7 @@ public:
         return Status(TStatusCode::DATA_QUALITY_ERROR, msg);
     }
     static Status VariantError(std::string_view msg) {
-        return Status(TStatusCode::VARIANT_ERROR, msg);
+        return Status(TStatusCode::DATA_QUALITY_ERROR, msg);
     }
 
     // used for global dict collection

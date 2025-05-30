@@ -241,6 +241,21 @@ Status ParquetScanner::build_dest(const arrow::DataType* arrow_type, const TypeD
         }
         break;
     }
+    case TYPE_VARIANT: {
+        if (at != ArrowTypeId::STRUCT) {
+            return Status::InternalError(
+                    fmt::format("Apache Arrow type (nested) {} does not match the type {} in StarRocks",
+                                arrow_type->name(), type_to_string(lt)));
+        }
+        raw_type_desc->type = TYPE_VARIANT;
+
+        int num = arrow_type -> num_fields();
+        if (num != 2) {
+            return Status::InternalError(
+                fmt::format("Variant unshredded type should have 2 fields, but got {}",
+                            num));
+        }
+    }
     default: {
         if (conv_func->func == nullptr) {
             need_cast = true;
