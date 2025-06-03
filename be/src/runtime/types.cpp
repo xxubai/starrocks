@@ -321,6 +321,7 @@ int TypeDescriptor::get_slot_size() const {
     case TYPE_OBJECT:
     case TYPE_PERCENTILE:
     case TYPE_JSON:
+    case TYPE_VARIANT:
     case TYPE_VARBINARY:
         return sizeof(StringValue);
 
