@@ -245,7 +245,7 @@ struct ArrayInfo {
  *                    |     +-- field_id_size_minus_one
  *                    +-- is_large
  */
-static StatusOr<ObjectInfo> get_object_info(std::string_view value);
+StatusOr<ObjectInfo> get_object_info(std::string_view value);
 
 /**
  *                5         3  2  1     0
@@ -256,5 +256,5 @@ static StatusOr<ObjectInfo> get_object_info(std::string_view value);
  *                             |     +-- field_offset_size_minus_one
  *                             +-- is_large
  */
-static StatusOr<ArrayInfo> get_array_info(std::string_view value);
+StatusOr<ArrayInfo> get_array_info(std::string_view value);
 }
