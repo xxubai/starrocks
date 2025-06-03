@@ -99,6 +99,7 @@ enum TPrimitiveType {
   DECIMAL64,
   DECIMAL128,
   JSON,
+  VARIANT,
   FUNCTION,
   VARBINARY
 }

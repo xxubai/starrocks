@@ -99,7 +99,8 @@ namespace starrocks {
     M(FUNCTION)                         \
     M(BINARY)                           \
     M(VARBINARY)                        \
-    M(JSON)
+    M(JSON)                             \
+    M(VARIANT)
 
 #define APPLY_FOR_BITSET_FILTER_SUPPORTED_TYPE(M) \
     M(TYPE_BOOLEAN)                               \
