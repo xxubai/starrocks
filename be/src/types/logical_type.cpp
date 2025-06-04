@@ -126,6 +126,8 @@ const char* logical_type_to_string(LogicalType type) {
         return "PERCENTILE";
     case TYPE_JSON:
         return "JSON";
+    case TYPE_VARIANT:
+        return "VARIANT";
     case TYPE_UNKNOWN:
         return "UNKNOWN";
     case TYPE_NONE:
