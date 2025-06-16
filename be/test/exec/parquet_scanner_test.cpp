@@ -224,7 +224,11 @@ class ParquetScannerTest : public ::testing::Test {
                 {"nested_array_c0", TypeDescriptor::create_array_type(TypeDescriptor::create_array_type(
                                             TypeDescriptor::from_logical_type(TYPE_VARCHAR)))},
                 {"col_map", TypeDescriptor::create_map_type(TypeDescriptor::create_varchar_type(1048576),
-                                                            TypeDescriptor::create_varchar_type(1048576))}};
+                                                            TypeDescriptor::create_varchar_type(1048576))},
+
+                // variant
+                {"id", TypeDescriptor::from_logical_type(TYPE_INT)},
+                {"var", TypeDescriptor::create_variant_type()}};
         SlotTypeDescInfoArray slot_infos;
         slot_infos.reserve(column_names.size());
         for (auto& name : column_names) {
@@ -358,11 +362,10 @@ class ParquetScannerTest : public ::testing::Test {
                                        773729, /*"/test_data/parquet_data/data_8191.parquet",*/
                                        772472, /*"/test_data/parquet_data/data_8192.parquet",*/
                                        775318, /*"/test_data/parquet_data/data_8193.parquet"*/};
-        // 869,    /*"/test_data/parquet_data/variant_primitive.parquet"*/
-        // 2183    /*"/test_data/parquet_data/variant_array_simple.parquet"*/
         _variant_file_names =
-                std::vector<std::string>{test_exec_dir + "/test_data/parquet_data/variant_primitive.parquet",
-                                         test_exec_dir + "/test_data/parquet_data/variant_array_simple.parquet"};
+                std::vector<std::string>{test_exec_dir + "/test_data/parquet_data/variant_null.parquet",
+                                         test_exec_dir + "/test_data/parquet_data/variant_primitive.parquet",
+                                         test_exec_dir + "/test_data/parquet_data/variant_object.parquet"};
         _runtime_state = _obj_pool.add(new RuntimeState(TQueryGlobals()));
         _issue_16475_file_names =
                 std::vector<std::string>{test_exec_dir + "/test_data/parquet_data/issue_17693_1.parquet",
@@ -403,6 +406,21 @@ TEST_F(ParquetScannerTest, test_nullable_parquet_data) {
         }
     };
     validate(scanner, 36865, check);
+}
+
+TEST_F(ParquetScannerTest, test_variant_parquet_data) {
+    auto column_names = std::vector<std::string>{"id", "var"};
+    auto slot_infos = select_columns(column_names, false);
+    auto ranges = generate_ranges(_variant_file_names, slot_infos.size(), {});
+    auto* desc_tbl = DescTblHelper::generate_desc_tbl(_runtime_state, _obj_pool, {slot_infos, {}});
+    auto scanner = create_parquet_scanner("UTC", desc_tbl, {}, ranges);
+    auto check = [](const ChunkPtr& chunk) {
+        auto& columns = chunk->columns();
+        for (auto& col : columns) {
+            ASSERT_TRUE(col->is_nullable() && !col->is_constant());
+        }
+    };
+    validate(scanner, 3, check);
 }
 
 TEST_F(ParquetScannerTest, test_issue_17693) {
