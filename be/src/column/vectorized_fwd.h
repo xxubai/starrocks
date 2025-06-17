@@ -17,7 +17,7 @@
 #include <memory>
 #include <vector>
 
-#include "variant.h"
+#include "formats/parquet/variant.h"
 #include "runtime/memory/column_allocator.h"
 
 namespace starrocks {

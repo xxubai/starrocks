@@ -1,5 +1,5 @@
 #include <arrow/util/endian.h>
-#include <column/variant.h>
+#include <formats/parquet/variant.h>
 #include <glog/logging.h>
 
 #include "common/statusor.h"

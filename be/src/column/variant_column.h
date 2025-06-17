@@ -4,15 +4,12 @@
 
 #pragma once
 
-#include <unordered_map>
 #include <utility>
-#include <vector>
 
-#include "variant.h"
+#include "formats/parquet/variant.h"
 #include "column/column.h"
 #include "column/object_column.h"
 #include "column/vectorized_fwd.h"
-#include "types/logical_type.h"
 
 namespace starrocks {
 class VariantColumn final : public CowFactory<ColumnFactory<ObjectColumn<Variant>, VariantColumn>, VariantColumn, Column> {
