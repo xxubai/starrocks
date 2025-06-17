@@ -737,8 +737,9 @@ struct ArrowConverter<AT, LT, is_nullable, is_strict, VariantGuard<LT>> {
         auto* variant_column = down_cast<VariantColumn*>(column);
         variant_column->reserve(column->size() + num_elements);
 
-        return Status::NotSupported(strings::Substitute("Arrow type $0 to Variant conversion is not supported",
-                                                        arrow::TypeTraits<ArrowTypeIdToType<AT>>::type_name()));
+        return Status::NotSupported(
+            strings::Substitute("Arrow type $0 to Variant conversion is not supported",
+                array->type()->name()));
     }
 };
 
