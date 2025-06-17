@@ -26,6 +26,7 @@
 #include "column/nullable_column.h"
 #include "column/struct_column.h"
 #include "column/type_traits.h"
+#include "column/variant_column.h"
 #include "column/vectorized_fwd.h"
 #include "common/status.h"
 #include "exec/arrow_type_traits.h"
@@ -721,10 +722,23 @@ struct ArrowConverter<AT, LT, is_nullable, is_strict, JsonGuard<LT>> {
                         [[maybe_unused]] Filter* chunk_filter, ArrowConvertContext* ctx,
                         [[maybe_unused]] ConvertFuncTree* conv_func) {
         auto* json_column = down_cast<JsonColumn*>(column);
-        // 预先分配足够的内存，以容纳即将追加的元素数
         json_column->reserve(column->size() + num_elements);
 
         return convert_arrow_to_json(array, json_column, array_start_idx, num_elements);
+    }
+};
+
+template <ArrowTypeId AT, LogicalType LT, bool is_nullable, bool is_strict>
+struct ArrowConverter<AT, LT, is_nullable, is_strict, VariantGuard<LT>> {
+    static Status apply(const arrow::Array* array, size_t array_start_idx, size_t num_elements, Column* column,
+                        size_t column_start_idx, [[maybe_unused]] uint8_t* null_data,
+                        [[maybe_unused]] Filter* chunk_filter, ArrowConvertContext* ctx,
+                        [[maybe_unused]] ConvertFuncTree* conv_func) {
+        auto* variant_column = down_cast<VariantColumn*>(column);
+        variant_column->reserve(column->size() + num_elements);
+
+        return Status::NotSupported(strings::Substitute("Arrow type $0 to Variant conversion is not supported",
+                                                        arrow::TypeTraits<ArrowTypeIdToType<AT>>::type_name()));
     }
 };
 
@@ -996,7 +1010,7 @@ static const std::unordered_map<int32_t, ConvertFunc> global_optimized_arrow_con
         ARROW_CONV_ENTRY(ArrowTypeId::LIST, TYPE_ARRAY, TYPE_JSON),
         ARROW_CONV_ENTRY(ArrowTypeId::LARGE_LIST, TYPE_ARRAY, TYPE_JSON),
         ARROW_CONV_ENTRY(ArrowTypeId::FIXED_SIZE_LIST, TYPE_ARRAY, TYPE_JSON),
-        ARROW_CONV_ENTRY(ArrowTypeId::STRUCT, TYPE_STRUCT, TYPE_JSON),
+        ARROW_CONV_ENTRY(ArrowTypeId::STRUCT, TYPE_STRUCT, TYPE_JSON, TYPE_VARIANT),
 };
 
 ConvertFunc get_arrow_converter(ArrowTypeId at, LogicalType lt, bool is_nullable, bool is_strict) {
