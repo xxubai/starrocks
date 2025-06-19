@@ -9,6 +9,7 @@
 
 #include "common/status.h"
 #include "runtime/decimalv2_value.h"
+#include "util/decimal_types.h"
 
 namespace starrocks {
 
@@ -72,10 +73,10 @@ enum class VariantType {
     UUID
 };
 
-template <typename DecimalType>
+template <typename D>
 struct DecimalValue {
     uint8_t scale;
-    DecimalType value;
+    DecimalType<D> value;
 };
 
 class VariantMetadata {
@@ -88,7 +89,7 @@ public:
     // indicating the number of strings in the dictionary
     uint32_t dict_size() const;
     // return the index for the key in the dictionary, or -1 if not found
-    StatusOr<uint32_t> get_index(std::string_view key) const;
+    uint32_t get_index(std::string_view key) const;
     // return the field name for the index
     StatusOr<std::string_view> get_key(uint32_t index) const;
 
@@ -108,22 +109,6 @@ private:
     uint32_t dict_size_{0};
 };
 
-/**
- * @brief Variant value class
- *
- * Value layout:
- *
- * ```
- *  7                                  2 1          0
- * +------------------------------------+------------+
- * |            value_header            | basic_type |
- * +------------------------------------+------------+
- * |                                                 |
- * :                   value_data                    :  <-- 0 or more bytes
- * |                                                 |
- * +-------------------------------------------------+
- * ```
- */
 class Variant {
 public:
     explicit Variant(const VariantMetadata &metadata, std::string_view value);
@@ -133,7 +118,6 @@ public:
 
     static constexpr uint8_t kHeaderSizeBytes = 1;
     static constexpr size_t kDecimalScaleSizeBytes = 1;
-    static constexpr size_t kPrimitiveStringLengthSizeBytes = 4;
     static constexpr uint8_t kBasicTypeMask = 0b00000011;
     static constexpr uint8_t kValueHeaderBitShift = 2;
 
@@ -160,8 +144,9 @@ public:
     /// \brief Get the primitive double value.
     StatusOr<double> get_double() const;
     /// \brief Get the decimal value
-    /// TODO: Determine the type of decimal value
-    StatusOr<DecimalV2Value> get_decimal() const;
+    StatusOr<DecimalValue<int32_t>> get_decimal4() const;
+    StatusOr<DecimalValue<int64_t>> get_decimal8() const;
+    StatusOr<DecimalValue<int128_t>> get_decimal16() const;
     /// \brief Get the date value as days since Unix epoch.
     StatusOr<int32_t> get_date() const;
     /// \brief Get the time value without timezone as microseconds since midnight.
@@ -183,27 +168,44 @@ public:
     StatusOr<uint32_t> num_elements() const;
 
     /// \brief Get the value of the object field by key.
-    /// \return returns the value of the field with the given key, or empty if the key
-    ///         doesn't exist.
+    /// \return returns the value of the field with the given key
     StatusOr<Variant> get_object_by_key(std::string_view key) const;
+
+    /// \brief Get the variant value of the object field
+    /// \return returns the value of the field with the given field id
+    StatusOr<Variant> get_element_at_index(uint32_t index) const;
+
+private:
+    uint8_t value_header() const;
+    Status validate_basic_type(BasicType type) const;
+
+    Status validate_primitive_type(VariantPrimitiveType type, size_t size_required) const;
+
+    template <typename PrimitiveType>
+    StatusOr<PrimitiveType> get_primitive(VariantPrimitiveType type) const;
+
+    StatusOr<std::string_view> get_primitive_string_or_binary(VariantPrimitiveType type) const;
+
+    template <typename DecimalType>
+    StatusOr<DecimalValue<DecimalType>> get_primitive_decimal(VariantPrimitiveType type) const;
 
     /// \brief Get the value of the object field by field id.
     /// \return returns the value of the field with the given field id, or empty if the
     ///         field id doesn't exist.
     StatusOr<Variant> get_object_by_id(uint32_t id) const;
 
-    StatusOr<Variant> get_array_by_index(uint32_t index) const;
-
-private:
-    uint8_t header() const;
-    Status validate_basic_type(BasicType type) const;
-
-    Status validate_primitive_type(VariantPrimitiveType type, size_t size_required) const;
-
-    template <typename PrimitiveType>
-    PrimitiveType get_primitive(VariantPrimitiveType type) const;
-
     VariantMetadata metadata_;
+    /**
+     * Value layout:
+     *  7                                  2 1          0
+     * +------------------------------------+------------+
+     * |            value_header            | basic_type |
+     * +------------------------------------+------------+
+     * |                                                 |
+     * :                   value_data                    :  <-- 0 or more bytes
+     * |                                                 |
+     * +-------------------------------------------------+
+     */
     std::string_view value_;
 };
 
@@ -213,9 +215,9 @@ struct ObjectInfo {
     uint32_t num_elements;
     /// The byte offset of the field id
     uint32_t id_start_offset;
-    /// The size of the field id list
+    /// The number of bytes used to encode the field ids
     uint8_t id_size;
-    /// The byte offset of the field list
+    /// The number of bytes used to encode the field offsets
     uint32_t offset_start_offset;
     /// The size of the field offset list
     uint8_t offset_size;

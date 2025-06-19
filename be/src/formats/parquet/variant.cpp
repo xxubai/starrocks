@@ -3,6 +3,7 @@
 #include <glog/logging.h>
 
 #include "common/statusor.h"
+#include "runtime/decimalv3.h"
 
 namespace starrocks {
 
@@ -16,8 +17,16 @@ inline uint32_t readLittleEndianUnsigned(const void* from, uint8_t size) {
 }
 
 VariantMetadata::VariantMetadata(std::string_view metadata) : metadata_(metadata) {
+    // Empty metadata is at least 3 bytes: version, dictionarySize and
+    // at least one offset.
+    if (metadata.size() < 3) {
+        throw Status::VariantError("Variant metadata size is too short: " + std::to_string(metadata.size()));
+    }
+
     const uint8_t version = header() & kVersionMask;
-    DCHECK_EQ(version, kSupportedVersion) << "Unsupported variant version: " << version;
+    if (version != kSupportedVersion) {
+        throw Status::VariantError("Unsupported variant version: " + std::to_string(version));
+    }
 
     const uint8_t offset_sz = offset_size();
     dict_size_ = readLittleEndianUnsigned(metadata.data() + kHeaderSizeBytes, offset_sz);
@@ -43,6 +52,10 @@ uint32_t VariantMetadata::dict_size() const {
 StatusOr<std::string_view> VariantMetadata::get_key(uint32_t index) const {
     uint8_t offset_sz = offset_size();
     uint32_t dict_sz = dict_size();
+    if (index >= dict_sz) {
+        return Status::VariantError("Variant index out of range: " + std::to_string(index) +
+                                    " >= " + std::to_string(dict_sz));
+    }
 
     size_t offset_start_pos = kHeaderSizeBytes + offset_sz + (index * offset_sz);
     uint32_t value_offset = readLittleEndianUnsigned(metadata_.data() + offset_start_pos, offset_sz);
@@ -59,22 +72,23 @@ StatusOr<std::string_view> VariantMetadata::get_key(uint32_t index) const {
 
 static constexpr uint8_t kBinarySearchThreshold = 32;
 
-StatusOr<uint32_t> linear_search(uint32_t dict_sz, std::string_view key, const VariantMetadata& metadata) {
+uint32_t linear_search(uint32_t dict_sz, std::string_view key, const VariantMetadata& metadata) {
     for (uint32_t i = 0; i < dict_sz; i++) {
         auto status = metadata.get_key(i);
         if (!status.ok()) {
-            return StatusOr<uint32_t>(-1);
+            return -1;
         }
+
         std::string_view field_key = status.value();
         if (field_key == key) {
-            return StatusOr<uint32_t>(i);
+            return i;
         }
     }
 
-    return StatusOr<uint32_t>(-1);
+    return -1;
 }
 
-StatusOr<uint32_t> VariantMetadata::get_index(std::string_view key) const {
+uint32_t VariantMetadata::get_index(std::string_view key) const {
     uint32_t dict_sz = dict_size();
     bool is_sorted = is_sorted_and_unique();
 
@@ -86,12 +100,12 @@ StatusOr<uint32_t> VariantMetadata::get_index(std::string_view key) const {
             uint32_t mid = left + (right - left) / 2;
             auto status = get_key(mid);
             if (!status.ok()) {
-                return StatusOr<uint32_t>(-1);
+                return -1;
             }
             std::string_view field_key = status.value();
             int cmp = field_key.compare(key);
             if (cmp == 0) {
-                return StatusOr<uint32_t>(mid);
+                return mid;
             }
             if (cmp < 0) {
                 left = mid + 1;
@@ -103,7 +117,7 @@ StatusOr<uint32_t> VariantMetadata::get_index(std::string_view key) const {
         return linear_search(dict_sz, key, *this);
     }
 
-    return StatusOr<uint32_t>(-1);
+    return -1;
 }
 
 
@@ -121,7 +135,7 @@ VariantType Variant::type() const {
     switch (basic_type()) {
         case BasicType::PRIMITIVE: {
             auto primitive_type =
-                static_cast<VariantPrimitiveType>(header());
+                static_cast<VariantPrimitiveType>(value_header());
             switch (primitive_type) {
                 case VariantPrimitiveType::NULL_TYPE:
                     return VariantType::NULL_TYPE;
@@ -334,7 +348,7 @@ std::string primitive_type_to_string(VariantPrimitiveType type) {
     return "Unknown";
 }
 
-uint8_t Variant::header() const {
+uint8_t Variant::value_header() const {
     return static_cast<uint8_t>(value_[0]) >> kValueHeaderBitShift;
 }
 
@@ -352,7 +366,7 @@ Status Variant::validate_primitive_type(VariantPrimitiveType type, size_t size_r
     RETURN_IF_ERROR(validate_basic_type(BasicType::PRIMITIVE));
 
     auto primitive_type =
-        static_cast<VariantPrimitiveType>(header());
+        static_cast<VariantPrimitiveType>(value_header());
     if (primitive_type != type) {
         return Status::VariantError(
             "Expected primitive type: " + primitive_type_to_string(type) +
@@ -370,12 +384,12 @@ Status Variant::validate_primitive_type(VariantPrimitiveType type, size_t size_r
 }
 
 template <typename PrimitiveType>
-PrimitiveType Variant::get_primitive(VariantPrimitiveType type) const {
+StatusOr<PrimitiveType> Variant::get_primitive(VariantPrimitiveType type) const {
     RETURN_IF_ERROR(validate_primitive_type(type, sizeof(PrimitiveType) + kHeaderSizeBytes));
 
     PrimitiveType primitive_value{};
     memcpy(&primitive_value, value_.data() + kHeaderSizeBytes, sizeof(PrimitiveType));
-    primitive_value = ::arrow::bit_util::FromLittleEndian(primitive_value);
+    primitive_value = arrow::bit_util::FromLittleEndian(primitive_value);
 
     return primitive_value;
 }
@@ -384,7 +398,7 @@ StatusOr<bool> Variant::get_bool() const {
     RETURN_IF_ERROR(validate_basic_type(basic_type()));
 
     // extract the primitive type from the header
-    VariantPrimitiveType primitive_type = static_cast<VariantPrimitiveType>(header());
+    VariantPrimitiveType primitive_type = static_cast<VariantPrimitiveType>(value_header());
     if (primitive_type == VariantPrimitiveType::BOOLEAN_TRUE) {
         return true;
     }
@@ -394,6 +408,143 @@ StatusOr<bool> Variant::get_bool() const {
 
     return Status::VariantError("Not a variant primitive boolean type with primitive type: " +
                                 primitive_type_to_string(primitive_type));
+}
+
+StatusOr<int8_t> Variant::get_int8() const {
+    return get_primitive<int8_t>(VariantPrimitiveType::INT8);
+}
+
+StatusOr<int16_t> Variant::get_int16() const {
+    return get_primitive<int16_t>(VariantPrimitiveType::INT16);
+}
+
+StatusOr<int32_t> Variant::get_int32() const {
+    return get_primitive<int32_t>(VariantPrimitiveType::INT32);
+}
+
+StatusOr<int64_t> Variant::get_int64() const {
+    return get_primitive<int64_t>(VariantPrimitiveType::INT64);
+}
+
+StatusOr<float> Variant::get_float() const {
+    return get_primitive<float>(VariantPrimitiveType::FLOAT);
+}
+
+StatusOr<double> Variant::get_double() const {
+    return get_primitive<double>(VariantPrimitiveType::DOUBLE);
+}
+
+template <typename DecimalType>
+StatusOr<DecimalValue<DecimalType>> Variant::get_primitive_decimal(VariantPrimitiveType type) const {
+    RETURN_IF_ERROR(validate_primitive_type(type, sizeof(DecimalType) + kHeaderSizeBytes + kDecimalScaleSizeBytes));
+
+    uint8_t scale = value_[kHeaderSizeBytes];
+    DecimalType decimal_value = 0;
+
+    if constexpr (std::is_same_v<DecimalType, int128_t>) {
+        // Handle int128_t using an array of two int64_t values
+        std::array<int64_t, 2> low_high_bits;
+        memcpy(&low_high_bits[0], value_.data() + 2, sizeof(int64_t));
+        memcpy(&low_high_bits[1], value_.data() + 10, sizeof(int64_t));
+        arrow::bit_util::little_endian::ToNative(low_high_bits);
+
+        // Combine into int128_t
+        memcpy(&decimal_value, low_high_bits.data(), sizeof(int128_t));
+    } else {
+        // For smaller types, use direct conversion
+        memcpy(&decimal_value,
+               value_.data() + kHeaderSizeBytes + kDecimalScaleSizeBytes,
+               sizeof(DecimalType));
+        decimal_value = arrow::bit_util::FromLittleEndian(decimal_value);
+    }
+
+    return DecimalValue<DecimalType>{scale, decimal_value};
+}
+
+StatusOr<DecimalValue<int32_t>> Variant::get_decimal4() const{
+    return get_primitive_decimal<int32_t>(VariantPrimitiveType::DECIMAL4);
+}
+
+StatusOr<DecimalValue<int64_t>> Variant::get_decimal8() const {
+    return get_primitive_decimal<int64_t>(VariantPrimitiveType::DECIMAL8);
+}
+
+StatusOr<DecimalValue<int128_t>> Variant::get_decimal16() const {
+    return get_primitive_decimal<int128_t>(VariantPrimitiveType::DECIMAL16);
+}
+
+StatusOr<std::string_view> Variant::get_primitive_string_or_binary(VariantPrimitiveType type) const {
+    // BINARY and STRING are both 4 byte little-endian size
+    RETURN_IF_ERROR(validate_primitive_type(type, kHeaderSizeBytes + 4));
+
+    uint32_t length = readLittleEndianUnsigned(value_.data() + kHeaderSizeBytes, sizeof(uint32_t));
+    if (value_.size() < length + kHeaderSizeBytes + 4) {
+        return Status::VariantError("Invalid string value: too short for specified length");
+    }
+
+    return std::string_view(value_.data() + kHeaderSizeBytes + 4, length);
+}
+
+StatusOr<std::string_view> Variant::get_string() const {
+    BasicType btype = basic_type();
+    if (btype == BasicType::SHORT_STRING) {
+        // The short string header value is the length of the string.
+        uint8_t short_string_length = value_header();
+        if (value_.size() < static_cast<size_t>(short_string_length + kHeaderSizeBytes)) {
+            return Status::VariantError("Invalid short string: too short: " +
+                                        std::to_string(value_.size()) +
+                                        " for at least " + std::to_string(short_string_length + kHeaderSizeBytes));
+        }
+
+        return std::string_view(value_.data() + kHeaderSizeBytes, short_string_length);
+    }
+
+    if (btype == BasicType::PRIMITIVE) {
+        return get_primitive_string_or_binary(VariantPrimitiveType::STRING);
+    }
+
+    return Status::VariantError("Required a string or a short string, but got: " +
+                                basic_type_to_string(btype));
+}
+
+StatusOr<std::string_view> Variant::get_binary() const {
+    RETURN_IF_ERROR(validate_basic_type(BasicType::PRIMITIVE));
+
+    return get_primitive_string_or_binary(VariantPrimitiveType::BINARY);
+}
+
+StatusOr<int32_t> Variant::get_date() const{
+    return get_primitive<int32_t>(VariantPrimitiveType::DATE);
+}
+
+StatusOr<int64_t> Variant::get_time_micros_ntz() const {
+    return get_primitive<int64_t>(VariantPrimitiveType::TIME);
+}
+
+StatusOr<int64_t> Variant::get_timestamp_micros() const {
+    return get_primitive<int64_t>(VariantPrimitiveType::TIMESTAMP_TZ);
+}
+
+StatusOr<int64_t> Variant::get_timestamp_micros_ntz() const {
+    return get_primitive<int64_t>(VariantPrimitiveType::TIMESTAMP_NTZ);
+}
+
+StatusOr<int64_t> Variant::get_timestamp_nanos_tz() const {
+    return get_primitive<int64_t>(VariantPrimitiveType::TIMESTAMP_TZ_NANOS);
+}
+
+StatusOr<int64_t> Variant::get_timestamp_nanos_ntz() const {
+    return get_primitive<int64_t>(VariantPrimitiveType::TIMESTAMP_NTZ_NANOS);
+}
+
+StatusOr<std::array<uint8_t, 16>> Variant::get_uuid() const {
+    RETURN_IF_ERROR(validate_basic_type(BasicType::PRIMITIVE));
+
+    RETURN_IF_ERROR(validate_primitive_type(VariantPrimitiveType::UUID, 16 + kHeaderSizeBytes));
+
+    std::array<uint8_t, 16> uuid_value;
+    memcpy(uuid_value.data(), value_.data() + kHeaderSizeBytes, sizeof(uuid_value));
+    return uuid_value;
 }
 
 StatusOr<uint32_t> Variant::num_elements() const {
@@ -418,5 +569,76 @@ StatusOr<uint32_t> Variant::num_elements() const {
     }
 }
 
+StatusOr<Variant> Variant::get_object_by_id(uint32_t id) const{
+    RETURN_IF_ERROR(validate_basic_type(BasicType::OBJECT));
+
+    auto object_info_status = get_object_info(value_);
+    if (!object_info_status.ok()) {
+        return object_info_status.status();
+    }
+
+    const ObjectInfo& info = object_info_status.value();
+    const uint32_t num_elements = info.num_elements;
+    std::optional<uint32_t> field_index_opt;
+    for (uint32_t i = 0; i < num_elements; ++i) {
+        uint32_t field_id = readLittleEndianUnsigned(value_.data() + info.id_start_offset + i * info.id_size, info.id_size);
+        if (field_id == id) {
+            field_index_opt = id;
+            break;
+        }
+    }
+
+    if (!field_index_opt.has_value()) {
+        return Status::VariantError("Field id not found: " + std::to_string(id));
+    }
+
+    uint32_t field_index = field_index_opt.value();
+    uint32_t value_offset = readLittleEndianUnsigned(value_.data() + info.offset_start_offset + field_index * info.offset_size, info.offset_size);
+    if (info.data_start_offset + value_offset > value_.size()) {
+        return Status::VariantError("Offset is out of bounds: " + std::to_string(value_offset) +
+                                    ", data_start_offset: " + std::to_string(info.data_start_offset) +
+                                    ", value_size: " + std::to_string(value_.size()));
+    }
+
+    const std::string_view field_value = value_.substr(info.data_start_offset + value_offset);
+    return Variant{metadata_, field_value};
+}
+
+
+StatusOr<Variant> Variant::get_object_by_key(std::string_view key) const{
+    RETURN_IF_ERROR(validate_basic_type(BasicType::OBJECT));
+
+    const uint32_t idx = metadata_.get_index(key);
+    if (idx == -1) {
+        return Status::VariantError("Key not found: " + std::string(key));
+    }
+
+    return get_object_by_id(idx);
+}
+
+StatusOr<Variant> Variant::get_element_at_index(uint32_t index) const {
+    RETURN_IF_ERROR(validate_basic_type(BasicType::ARRAY));
+
+    auto array_info_status = get_array_info(value_);
+    if (!array_info_status.ok()) {
+            return array_info_status.status();
+    }
+
+    const ArrayInfo& info = array_info_status.value();
+    if (index >= info.num_elements) {
+        return Status::VariantError("Array index out of range: " + std::to_string(index) +
+                                " >= " + std::to_string(info.num_elements));
+    }
+
+    uint32_t offset = readLittleEndianUnsigned(value_.data() + info.offset_start_offset + index * info.offset_size, info.offset_size);
+    if (info.data_start_offset + offset > value_.size()) {
+            return Status::VariantError("Offset is out of bounds: " + std::to_string(offset) +
+                                    ", data_start_offset: " + std::to_string(info.data_start_offset) +
+                                    ", value_size: " + std::to_string(value_.size()));
+    }
+
+    const std::string_view element_value = value_.substr(info.data_start_offset + offset);
+    return Variant{metadata_, element_value};
+}
 
 }
