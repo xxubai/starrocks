@@ -41,6 +41,24 @@ public:
                                   variant_size - _metadata.size());
     }
 
+    VariantValue& operator=(const VariantValue& rhs) {
+        if (this != &rhs) {
+            _metadata = rhs._metadata;
+            _value = rhs._value;
+        }
+
+        return *this;
+    }
+
+    VariantValue& operator=(VariantValue&& rhs) noexcept {
+        if (this != &rhs) {
+            _metadata = std::move(rhs._metadata);
+            _value = std::move(rhs._value);
+        }
+
+        return *this;
+    }
+
     // Load metadata from the variant binary.
     // will slice the variant binary to extract metadata
     StatusOr<std::string_view> load_metadata(std::string_view variant) const;
