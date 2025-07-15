@@ -93,7 +93,7 @@ public:
     virtual bool is_object() const { return false; }
 
     virtual bool is_json() const { return false; }
-    virtual bool is_variant() const {return false; }
+    virtual bool is_variant() const { return false; }
 
     virtual bool is_array() const { return false; }
 

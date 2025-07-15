@@ -36,7 +36,7 @@ const uint8_t* VariantColumn::deserialize_and_append(const uint8_t* pos) {
     uint32_t variant_length = *reinterpret_cast<const uint32_t*>(pos);
     VariantValue variant(Slice(pos, variant_length + sizeof(uint32_t)));
 
-    append(std::move(variant));
+    BaseClass::append(std::move(variant));
 
     return pos + variant.serialize_size();
 }
@@ -51,6 +51,14 @@ void VariantColumn::put_mysql_row_buffer(MysqlRowBuffer* buf, size_t idx, bool i
     } else {
         buf->push_string(json->data(), json->size(), '\'');
     }
+}
+
+void VariantColumn::append_datum(const Datum& datum) {
+    BaseClass::append(datum.get<VariantValue*>());
+}
+
+void VariantColumn::append(const Column& src, size_t offset, size_t count) override {
+    BaseClass::append(src, offset, count);
 }
 
 }

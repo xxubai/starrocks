@@ -13,7 +13,7 @@
 // limitations under the License.
 
 #pragma once
-#include <cstdint>
+
 #include <string_view>
 
 #include "exprs/jsonpath.h"
@@ -40,6 +40,12 @@ public:
         _value = std::string_view(variant_raw + sizeof(uint32_t) + _metadata.size(),
                                   variant_size - _metadata.size());
     }
+
+    VariantValue() = default;
+
+    VariantValue(const VariantValue& rhs) = default;
+
+    VariantValue(VariantValue&& rhs)  noexcept : _metadata(std::move(rhs._metadata)), _value(std::move(rhs._value)) {}
 
     VariantValue& operator=(const VariantValue& rhs) {
         if (this != &rhs) {

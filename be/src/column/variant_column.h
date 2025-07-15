@@ -19,13 +19,14 @@
 #include "column/column.h"
 #include "column/object_column.h"
 #include "column/vectorized_fwd.h"
+#include "util/variant_value.h"
 
 namespace starrocks {
-class VariantValue;
 
 class VariantColumn final : public CowFactory<ColumnFactory<ObjectColumn<VariantValue>, VariantColumn>, VariantColumn, Column> {
 public:
-    using SuperClass = CowFactory;
+    using ValueType = VariantValue;
+    using SuperClass = CowFactory<ColumnFactory<ObjectColumn<VariantValue>, VariantColumn>, VariantColumn, Column>;
     using BaseClass = VariantColumnBase;
 
     VariantColumn() = default;
@@ -34,10 +35,18 @@ public:
 
     VariantColumn(VariantColumn&& rhs) noexcept : SuperClass(std::move(rhs)) {}
 
+    MutableColumnPtr clone() const override {
+        return BaseClass::clone();
+    }
+    MutableColumnPtr clone_empty() const override { return this->create(); }
+
     uint32_t serialize(size_t idx, uint8_t* pos) const override;
     uint32_t serialize_size(size_t idx) const override;
     void serialize_batch(uint8_t* dst, Buffer<uint32_t>& slice_sizes, size_t chunk_size, uint32_t max_one_row_size) const override;
     const uint8_t* deserialize_and_append(const uint8_t* pos) override;
+
+    void append_datum(const Datum& datum) override;
+    void append(const Column& src, size_t offset, size_t count) override;
 
     bool is_variant() const override {
         return true;
@@ -49,4 +58,5 @@ public:
 
     void put_mysql_row_buffer(MysqlRowBuffer* buf, size_t idx, bool is_binary_protocol = false) const override;
 };
+
 }

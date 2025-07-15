@@ -19,6 +19,7 @@
 #include "column/binary_column.h"
 #include "column/decimalv3_column.h"
 #include "column/json_column.h"
+#include "column/variant_column.h"
 #include "column/nullable_column.h"
 #include "column/object_column.h"
 #include "column/struct_column.h"
@@ -26,6 +27,7 @@
 #include "types/constexpr.h"
 #include "types/logical_type.h"
 #include "util/json.h"
+#include "util/variant_value.h"
 
 namespace starrocks {
 
@@ -77,6 +79,8 @@ template <>
 inline constexpr bool isArithmeticLT<TYPE_JSON> = false;
 template <>
 inline constexpr bool isArithmeticLT<TYPE_VARBINARY> = false;
+template <>
+inline constexpr bool isArithmeticLT<TYPE_VARIANT> = false;
 
 template <LogicalType logical_type>
 constexpr bool isSliceLT = false;
@@ -272,6 +276,13 @@ template <>
 struct RunTimeTypeTraits<TYPE_JSON> {
     using CppType = JsonValue*;
     using ColumnType = JsonColumn;
+    using ProxyContainerType = ColumnType::Container;
+};
+
+template<>
+struct RunTimeTypeTraits<TYPE_VARIANT> {
+    using CppType = VariantValue*;
+    using ColumnType = VariantColumn;
     using ProxyContainerType = ColumnType::Container;
 };
 

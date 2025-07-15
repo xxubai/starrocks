@@ -112,7 +112,6 @@ set(UTIL_FILES
   internal_service_recoverable_stub.cpp
   byte_buffer.cpp
   variant_value.cpp
-  variant_util.h
   variant_util.cpp
 )
 
