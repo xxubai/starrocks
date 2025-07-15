@@ -14,7 +14,9 @@
 
 #include "variant_column.h"
 
+#include "util/mysql_row_buffer.h"
 #include "util/variant_value.h"
+
 namespace starrocks {
 
 uint32_t VariantColumn::serialize(size_t idx, uint8_t* pos) const{
@@ -57,7 +59,7 @@ void VariantColumn::append_datum(const Datum& datum) {
     BaseClass::append(datum.get<VariantValue*>());
 }
 
-void VariantColumn::append(const Column& src, size_t offset, size_t count) override {
+void VariantColumn::append(const Column& src, size_t offset, size_t count) {
     BaseClass::append(src, offset, count);
 }
 

@@ -495,4 +495,12 @@ struct RunTimeTypeLimits<TYPE_JSON> {
     static value_type max_value() { return JsonValue{vpack::Slice::maxKeySlice()}; }
 };
 
+template <>
+struct RunTimeTypeLimits<TYPE_VARIANT> {
+    using value_type = VariantValue;
+
+    static value_type min_value() { return VariantValue{Slice::min_value()}; }
+    static value_type max_value() { return VariantValue{Slice::max_value()}; }
+};
+
 } // namespace starrocks

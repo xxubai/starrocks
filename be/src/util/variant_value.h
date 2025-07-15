@@ -14,9 +14,12 @@
 
 #pragma once
 
+#include <cctz/time_zone.h>
+
 #include <string_view>
 
-#include "exprs/jsonpath.h"
+#include "common/statusor.h"
+#include "util/slice.h"
 #include "formats/parquet/variant.h"
 
 namespace starrocks {
@@ -36,7 +39,7 @@ public:
         }
 
         const auto variant = std::string_view(variant_raw + sizeof(uint32_t), variant_size);
-        _metadata = *load_metadata(variant);
+        _metadata = load_metadata(variant).value();
         _value = std::string_view(variant_raw + sizeof(uint32_t) + _metadata.size(),
                                   variant_size - _metadata.size());
     }
@@ -76,6 +79,8 @@ public:
     // Calculate the size of the serialized VariantValue.
     // 4 bytes for value size + metadata size + value size
     uint64_t serialize_size() const;
+
+    uint64_t mem_usage() const { return serialize_size(); }
 
     // Convert to a JSON string
     StatusOr<std::string> to_json(cctz::time_zone timezone = cctz::local_time_zone()) const;
