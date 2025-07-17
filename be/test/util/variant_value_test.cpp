@@ -24,8 +24,8 @@ class VariantValueTest : public ::testing::Test {
 
 TEST_F(VariantValueTest, NullToJson) {
     uint8_t null_chars[] = {static_cast<uint8_t>(VariantPrimitiveType::NULL_TYPE) << 2};
-    std::string_view null_value(reinterpret_cast<const char*>(null_chars), sizeof(null_chars));
-    VariantValue v(VariantMetadata::kEmptyMetadataChars, null_value);
+    std::string_view null_value(reinterpret_cast<const char*>(null_chars), 1);
+    VariantValue v(VariantMetadata::kEmptyMetadata, null_value);
     auto json = v.to_json();
     ASSERT_TRUE(json.ok());
     EXPECT_EQ("null", *json);

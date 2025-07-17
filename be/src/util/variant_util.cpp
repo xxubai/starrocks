@@ -15,11 +15,15 @@
 #include "variant_util.h"
 
 #include <arrow/util/endian.h>
-
 #include <boost/uuid/uuid.hpp>
 #include <boost/uuid/uuid_io.hpp>
 
 #include "url_coding.h"
+#include "runtime/decimalv3.h"
+#include "exprs/cast_expr.h"
+#include "types/timestamp_value.h"
+#include "formats/parquet/variant.h"
+
 namespace starrocks {
 
 uint32_t VariantUtil::readLittleEndianUnsigned(const void* from, uint8_t size) {
@@ -30,52 +34,52 @@ uint32_t VariantUtil::readLittleEndianUnsigned(const void* from, uint8_t size) {
 
 std::string VariantUtil::type_to_string(VariantType type) {
     switch (type) {
-        case VariantType::OBJECT:
-            return "Object";
-        case VariantType::ARRAY:
-            return "Array";
-        case VariantType::NULL_TYPE:
-            return "Null";
-        case VariantType::BOOLEAN:
-            return "Boolean";
-        case VariantType::INT8:
-            return "Int8";
-        case VariantType::INT16:
-            return "Int16";
-        case VariantType::INT32:
-            return "Int32";
-        case VariantType::INT64:
-            return "Int64";
-        case VariantType::DOUBLE:
-            return "Double";
-        case VariantType::DECIMAL4:
-            return "Decimal4";
-        case VariantType::DECIMAL8:
-            return "Decimal8";
-        case VariantType::DECIMAL16:
-            return "Decimal16";
-        case VariantType::DATE:
-            return "Date";
-        case VariantType::TIMESTAMP_TZ:
-            return "TimestampTZ";
-        case VariantType::TIMESTAMP_NTZ:
-            return "TimestampNTZ";
-        case VariantType::FLOAT:
-            return "Float";
-        case VariantType::BINARY:
-            return "Binary";
-        case VariantType::STRING:
-            return "String";
-        case VariantType::TIME_NTZ:
-            return "TimeNTZ";
-        case VariantType::TIMESTAMP_TZ_NANOS:
-            return "TimestampTZNanos";
-        case VariantType::TIMESTAMP_NTZ_NANOS:
-            return "TimestampNTZNanos";
-        case VariantType::UUID:
-            return "UUID";
-        default:
-            return "Unknown";
+    case VariantType::OBJECT:
+        return "Object";
+    case VariantType::ARRAY:
+        return "Array";
+    case VariantType::NULL_TYPE:
+        return "Null";
+    case VariantType::BOOLEAN:
+        return "Boolean";
+    case VariantType::INT8:
+        return "Int8";
+    case VariantType::INT16:
+        return "Int16";
+    case VariantType::INT32:
+        return "Int32";
+    case VariantType::INT64:
+        return "Int64";
+    case VariantType::DOUBLE:
+        return "Double";
+    case VariantType::DECIMAL4:
+        return "Decimal4";
+    case VariantType::DECIMAL8:
+        return "Decimal8";
+    case VariantType::DECIMAL16:
+        return "Decimal16";
+    case VariantType::DATE:
+        return "Date";
+    case VariantType::TIMESTAMP_TZ:
+        return "TimestampTZ";
+    case VariantType::TIMESTAMP_NTZ:
+        return "TimestampNTZ";
+    case VariantType::FLOAT:
+        return "Float";
+    case VariantType::BINARY:
+        return "Binary";
+    case VariantType::STRING:
+        return "String";
+    case VariantType::TIME_NTZ:
+        return "TimeNTZ";
+    case VariantType::TIMESTAMP_TZ_NANOS:
+        return "TimestampTZNanos";
+    case VariantType::TIMESTAMP_NTZ_NANOS:
+        return "TimestampNTZNanos";
+    case VariantType::UUID:
+        return "UUID";
+    default:
+        return "Unknown";
     }
 }
 
@@ -104,14 +108,16 @@ void append_quoted_string(std::stringstream& ss, const std::string& str) {
 }
 
 Status VariantUtil::variant_to_json(std::string_view metadata, std::string_view value, std::stringstream& json_str, cctz::time_zone timezone){
-    switch (Variant variant{metadata, value};variant.type()) {
+    Variant variant{metadata, value};
+    switch (variant.type()) {
     case VariantType::NULL_TYPE:
         json_str << "null";
         break;
-    case VariantType::BOOLEAN:
+    case VariantType::BOOLEAN: {
         bool res = *variant.get_bool();
         json_str << (res ? "true" : "false");
         break;
+    }
     case VariantType::INT8:
         json_str << *variant.get_int8();
         break;
@@ -124,7 +130,7 @@ Status VariantUtil::variant_to_json(std::string_view metadata, std::string_view 
     case VariantType::INT64:
         json_str << *variant.get_int64();
         break;
-    case VariantType::FLOAT:
+    case VariantType::FLOAT: {
         const float f = *variant.get_float();
         if (std::isfinite(f)) {
             json_str << f;
@@ -132,7 +138,8 @@ Status VariantUtil::variant_to_json(std::string_view metadata, std::string_view 
             append_quoted_string(json_str, std::to_string(f));
         }
         break;
-    case VariantType::DOUBLE:
+    }
+    case VariantType::DOUBLE: {
         const double d = *variant.get_double();
         if (std::isfinite(d)) {
             json_str << d;
@@ -140,6 +147,7 @@ Status VariantUtil::variant_to_json(std::string_view metadata, std::string_view 
             append_quoted_string(json_str, std::to_string(d));
         }
         break;
+    }
     case VariantType::DECIMAL4: {
         DecimalValue<int32_t> decimal = *variant.get_decimal4();
         json_str << decimal4_to_string(decimal);
@@ -165,6 +173,7 @@ Status VariantUtil::variant_to_json(std::string_view metadata, std::string_view 
         std::string encoded;
         base64_encode(binary_str, &encoded);
         append_quoted_string(json_str, binary_str);
+        break;
     }
     case VariantType::UUID: {
         const auto uuid_arr = *variant.get_uuid();
@@ -173,6 +182,7 @@ Status VariantUtil::variant_to_json(std::string_view metadata, std::string_view 
             uuid.data[i] = uuid_arr[i];
         }
         append_quoted_string(json_str, boost::uuids::to_string(uuid));
+        break;
     }
     case VariantType::DATE: {
         int32_t date = *variant.get_date();
@@ -207,17 +217,16 @@ Status VariantUtil::variant_to_json(std::string_view metadata, std::string_view 
             if (i > 0) {
                 json_str << ",";
             }
+
             uint32_t id = readLittleEndianUnsigned(value.data() + id_start_offset + i * id_size, id_size);
             uint32_t offset = readLittleEndianUnsigned(value.data() + offset_start_offset + i * offset_size, offset_size);
-            if (i > 0) {
-                json_str << ",";
-            }
             json_str << variant.metadata().get_key(id) << ":";
-            if (uint32_t next_pos = data_start_offset + offset ;next_pos < value.size()) {
+            if (uint32_t next_pos = data_start_offset + offset; next_pos < value.size()) {
                 std::string_view next_value = value.substr(next_pos, value.size() - next_pos);
                 // Recursively convert the next value to JSON
-                if (!variant_to_json(metadata, next_value, json_str, timezone).ok()) {
-                    return Status::JsonFormatError("Failed to convert variant object value to JSON");
+                auto status = variant_to_json(metadata, next_value, json_str, timezone);
+                if (!status.ok()) {
+                    return status;
                 }
             } else {
                 return Status::InternalError("Invalid offset in object: " + std::to_string(offset));
@@ -231,6 +240,7 @@ Status VariantUtil::variant_to_json(std::string_view metadata, std::string_view 
         if (!info.ok()) {
             return info.status();
         }
+
         const auto& [num_elements, offset_size, offset_start_offset, data_start_offset] = info.value();
         json_str << "[";
         for (size_t i = 0; i < num_elements; ++i) {
@@ -238,11 +248,12 @@ Status VariantUtil::variant_to_json(std::string_view metadata, std::string_view 
                 json_str << ",";
             }
             uint32_t offset = readLittleEndianUnsigned(value.data() + offset_start_offset + i * offset_size, offset_size);
-            if (uint32_t next_pos = data_start_offset + offset ;next_pos < value.size()) {
+            if (uint32_t next_pos = data_start_offset + offset; next_pos < value.size()) {
                 std::string_view next_value = value.substr(next_pos, value.size() - next_pos);
                 // Recursively convert the next value to JSON
-                if (!variant_to_json(metadata, next_value, json_str, timezone).ok()) {
-                    return Status::JsonFormatError("Failed to convert variant array value to JSON");
+                auto status = variant_to_json(metadata, next_value, json_str, timezone);
+                if (!status.ok()) {
+                    return status;
                 }
             } else {
                 return Status::InternalError("Invalid offset in array: " + std::to_string(offset));
@@ -255,9 +266,7 @@ Status VariantUtil::variant_to_json(std::string_view metadata, std::string_view 
         return Status::NotSupported("Unsupported variant type: " + type_to_string(variant.type()));
     }
 
-    return Status::InternalError("Failed to convert variant to JSON");
+    return Status::OK();
 }
 
-
-
-}
+} // namespace starrocks

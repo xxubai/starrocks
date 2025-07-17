@@ -20,6 +20,7 @@
 
 #include "common/statusor.h"
 #include "util/slice.h"
+#include "fmt/format.h"
 #include "formats/parquet/variant.h"
 
 namespace starrocks {
@@ -84,7 +85,7 @@ public:
 
     // Convert to a JSON string
     StatusOr<std::string> to_json(cctz::time_zone timezone = cctz::local_time_zone()) const;
-    StatusOr<std::string> to_string() const;
+    std::string to_string() const;
 
     std::string_view get_metadata() const { return _metadata; }
     std::string_view get_value() const { return _value; }
@@ -100,4 +101,16 @@ private:
     std::string_view _value;
 };
 
-}
+// append json string to the stream
+std::ostream& operator<<(std::ostream& os, const VariantValue& json);
+
+} // namespace starrocks
+
+// fmt::format
+template <>
+struct fmt::formatter<starrocks::VariantValue> : formatter<std::string> {
+    template <typename FormatContext>
+    auto format(const starrocks::VariantValue& p, FormatContext& ctx) -> decltype(ctx.out()) {
+        return formatter<std::string>::format(p.to_string(), ctx);
+    }
+}; // namespace fmt

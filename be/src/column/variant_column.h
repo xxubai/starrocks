@@ -48,6 +48,14 @@ public:
     void append_datum(const Datum& datum) override;
     void append(const Column& src, size_t offset, size_t count) override;
 
+    // Add a forwarding function to expose the base class append function
+    void append(const Column& src) {
+        append(src, 0, src.size());
+    }
+    void append(const VariantValue* object);
+    void append(VariantValue&& object);
+    void append(const VariantValue& object);
+
     bool is_variant() const override {
         return true;
     }
@@ -59,4 +67,4 @@ public:
     void put_mysql_row_buffer(MysqlRowBuffer* buf, size_t idx, bool is_binary_protocol = false) const override;
 };
 
-}
+} // namespace starrocks

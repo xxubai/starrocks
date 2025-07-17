@@ -89,8 +89,17 @@ StatusOr<std::string> VariantValue::to_json(cctz::time_zone timezone) const{
     return json_str.str();
 }
 
-StatusOr<std::string> VariantValue::to_string() const{
-    return to_json();
+std::string VariantValue::to_string() const{
+    auto json_result = to_json();
+    if (!json_result.ok()) {
+        return "";
+    }
+
+    return json_result.value();
+}
+
+std::ostream& operator<<(std::ostream& os, const VariantValue& value){
+    return os << value.to_string();
 }
 
 }

@@ -38,7 +38,7 @@ const uint8_t* VariantColumn::deserialize_and_append(const uint8_t* pos) {
     uint32_t variant_length = *reinterpret_cast<const uint32_t*>(pos);
     VariantValue variant(Slice(pos, variant_length + sizeof(uint32_t)));
 
-    BaseClass::append(std::move(variant));
+    append(std::move(variant));
 
     return pos + variant.serialize_size();
 }
@@ -61,6 +61,18 @@ void VariantColumn::append_datum(const Datum& datum) {
 
 void VariantColumn::append(const Column& src, size_t offset, size_t count) {
     BaseClass::append(src, offset, count);
+}
+
+void VariantColumn::append(const VariantValue& object){
+    BaseClass::append(object);
+}
+
+void VariantColumn::append(const VariantValue* object) {
+    BaseClass::append(object);
+}
+
+void VariantColumn::append(VariantValue&& object){
+    BaseClass::append(std::move(object));
 }
 
 }

@@ -21,17 +21,17 @@
 
 namespace starrocks {
 struct VariantUtil {
-    inline static std::string type_to_string(VariantType type);
+    static std::string type_to_string(VariantType type);
 
-    inline static Status variant_to_json(std::string_view metadata,
+    static Status variant_to_json(std::string_view metadata,
                                                 std::string_view value,
                                                 std::stringstream& json_str,
                                                 cctz::time_zone timezone = cctz::local_time_zone());
-    static inline uint32_t readLittleEndianUnsigned(const void* from, uint8_t size) ;
+    static uint32_t readLittleEndianUnsigned(const void* from, uint8_t size);
 
-    inline static std::string decimal4_to_string(DecimalValue<int32_t> decimal);
-    inline static std::string decimal8_to_string(DecimalValue<int64_t> decimal);
-    inline static std::string decimal16_to_string(DecimalValue<int128_t> decimal);
+    static std::string decimal4_to_string(DecimalValue<int32_t> decimal);
+    static std::string decimal8_to_string(DecimalValue<int64_t> decimal);
+    static std::string decimal16_to_string(DecimalValue<int128_t> decimal);
 };
 
 }

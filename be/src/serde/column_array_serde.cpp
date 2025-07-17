@@ -19,7 +19,6 @@
 #include <lz4/lz4frame.h>
 #include <streamvbyte.h>
 #include <streamvbytedelta.h>
-#include <bits/stat.h>
 
 #include "column/array_column.h"
 #include "column/binary_column.h"
