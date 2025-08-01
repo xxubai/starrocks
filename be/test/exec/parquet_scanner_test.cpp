@@ -776,10 +776,10 @@ TEST_F(ParquetScannerTest, datetime) {
 }
 
 TEST_F(ParquetScannerTest, test_variant) {
-    const std::string variant_file_name = test_exec_dir + "/test_data/parquet_data/variant.parquet";
+    const std::vector variant_file_name = {test_exec_dir + "/test_data/parquet_data/variant.parquet"};
     std::vector<std::string> column = {"col_variant"};
-    auto slot_infos = select_columns(column, false);
-    auto ranges = generate_ranges(variant_file_name, slot_infos);
+    auto slot_infos = select_columns(column, true);
+    auto ranges = generate_ranges(variant_file_name, slot_infos.size(), {});
     auto* desc_tbl = DescTblHelper::generate_desc_tbl(_runtime_state, _obj_pool, {slot_infos, {}});
     auto scanner = create_parquet_scanner("UTC", desc_tbl, {}, ranges);
     auto check = [](const ChunkPtr& chunk) {
@@ -788,6 +788,7 @@ TEST_F(ParquetScannerTest, test_variant) {
             ASSERT_TRUE(col->is_nullable() && !col->is_constant());
         }
     };
+
     validate(scanner, 24, check);
 }
 
