@@ -105,6 +105,13 @@ public class IcebergApiConverterTest {
     }
 
     @Test
+    public void testVariant() {
+        Type variantType = fromIcebergType(Types.VariantType.get());
+        assertTrue(variantType.isVariantType());
+        assertEquals(ScalarType.createType(PrimitiveType.VARIANT), variantType);
+    }
+
+    @Test
     public void testUnsupported() {
         org.apache.iceberg.types.Type icebergType = Types.MapType.ofRequired(1, 2,
                 Types.ListType.ofRequired(136, Types.IntegerType.get()), Types.StringType.get());
@@ -209,6 +216,7 @@ public class IcebergApiConverterTest {
         columns.add(new Column("c14", new MapType(Type.INT, Type.INT)));
         columns.add(new Column("c15", new StructType(ImmutableList.of(Type.INT))));
         columns.add(new Column("c16", Type.TIME));
+        columns.add(new Column("c17", Type.VARIANT));
 
         Schema schema = IcebergApiConverter.toIcebergApiSchema(columns);
         assertEquals("table {\n" +
@@ -226,8 +234,9 @@ public class IcebergApiConverterTest {
                 "  12: c12: required decimal(-1, -1)\n" +
                 "  13: c13: required list<int>\n" +
                 "  14: c14: required map<int, int>\n" +
-                "  15: c15: required struct<20: col1: optional int>\n" +
+                "  15: c15: required struct<21: col1: optional int>\n" +
                 "  16: c16: required time\n" +
+                "  17: c17: required variant\n" +
                 "}", schema.toString());
         ListPartitionDesc partDesc = new ListPartitionDesc(Lists.newArrayList("c1"), null);
         PartitionSpec spec = IcebergApiConverter.parsePartitionFields(schema, partDesc);
@@ -509,5 +518,7 @@ public class IcebergApiConverterTest {
         assertEquals(org.apache.iceberg.types.Type.TypeID.STRING, type.typeId());
         type = IcebergApiConverter.toIcebergColumnType(ScalarType.createType(PrimitiveType.VARBINARY));
         assertEquals(org.apache.iceberg.types.Type.TypeID.BINARY, type.typeId());
+        type = IcebergApiConverter.toIcebergColumnType(ScalarType.createType(PrimitiveType.VARIANT));
+        assertEquals(org.apache.iceberg.types.Type.TypeID.VARIANT, type.typeId());
     }
 }

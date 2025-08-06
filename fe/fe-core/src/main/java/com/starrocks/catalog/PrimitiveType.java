@@ -78,6 +78,7 @@ public enum PrimitiveType {
     DECIMAL256("DECIMAL256", 32, TPrimitiveType.DECIMAL256),
 
     JSON("JSON", 16, TPrimitiveType.JSON),
+    VARIANT("VARIANT", 16, TPrimitiveType.VARIANT),
 
     FUNCTION("FUNCTION", 8, TPrimitiveType.FUNCTION),
 
@@ -146,7 +147,7 @@ public enum PrimitiveType {
     static {
         ImmutableSetMultimap.Builder<PrimitiveType, PrimitiveType> builder = ImmutableSetMultimap.builder();
         builder.putAll(NULL_TYPE, BASIC_TYPE_LIST);
-        builder.putAll(NULL_TYPE, ImmutableList.of(HLL, BITMAP, PERCENTILE, JSON, VARBINARY));
+        builder.putAll(NULL_TYPE, ImmutableList.of(HLL, BITMAP, PERCENTILE, JSON, VARBINARY, VARIANT));
 
         builder.putAll(BOOLEAN, BASIC_TYPE_LIST);
         builder.putAll(TINYINT, BASIC_TYPE_LIST);
@@ -189,6 +190,10 @@ public enum PrimitiveType {
             builder.put(type, JSON);
             builder.put(JSON, type);
         }
+
+        // VARIANT
+        builder.putAll(VARIANT, VARIANT);
+        builder.putAll(VARIANT, NULL_TYPE);
 
         IMPLICIT_CAST_MAP = builder.build();
     }
@@ -508,6 +513,10 @@ public enum PrimitiveType {
 
     public boolean isJsonType() {
         return this == JSON;
+    }
+
+    public boolean isVariantType() {
+        return this == VARIANT;
     }
 
     public boolean isFunctionType() {
