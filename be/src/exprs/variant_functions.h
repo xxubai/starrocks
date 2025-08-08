@@ -34,6 +34,16 @@ public:
      */
     DEFINE_VECTORIZED_FN(variant_query);
 
+    // Preload the variant segments if necessary.
+    // This function is called once per query execution
+    // The scope indicates whether the state is shared across the plan fragment
+    // (FRAGMENT_LOCAL) or local to the execution thread (THREAD_LOCAL).
+    // Returns Status::OK() on success, or an error status if initialization fails.
+    static Status preload_variant_segments(FunctionContext* context, FunctionContext::FunctionStateScope scope);
+
+    // Clear the variant segments state.
+    static Status clear_variant_segments(FunctionContext* context, FunctionContext::FunctionStateScope scope);
+
 private:
     template <LogicalType ResultType>
     static StatusOr<ColumnPtr> _do_variant_query(FunctionContext* context, const Columns& vector);

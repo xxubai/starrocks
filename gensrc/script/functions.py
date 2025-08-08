@@ -874,7 +874,8 @@ vectorized_functions = [
     [110101, "to_json", False, False, "JSON", ["ANY_STRUCT"], "JsonFunctions::to_json"],
 
     # variant type function
-    [110200, "variant_query", False, False, "VARIANT", ["VARIANT", "VARCHAR"], "VariantFunctions::variant_get"],
+    [110200, "variant_query", False, False, "VARIANT", ["VARIANT", "VARCHAR"], "VariantFunctions::variant_get",
+     "VariantFunctions::preload_variant_segments", "VariantFunctions::clear_variant_segments"],
 
     # aes and base64 function
     [120100, "aes_encrypt", False, False, "VARCHAR", ["VARCHAR", "VARCHAR"], "EncryptionFunctions::aes_encrypt"],

@@ -34,7 +34,7 @@ StatusOr<RunTimeCppType<TYPE_VARCHAR>> cast_variant_to_string(const Variant& var
                                                               ColumnBuilder<TYPE_VARCHAR>& result);
 
 template <LogicalType ResultType, bool AllowThrowException>
-static StatusOr<RunTimeCppType<ResultType>> cast_variant_value_to(const VariantValue& value,
+static Status cast_variant_value_to(const Variant& variant,
                                                                   const cctz::time_zone& zone,
                                                                   ColumnBuilder<ResultType>& result);
 

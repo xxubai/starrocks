@@ -15,7 +15,6 @@
 #include "variant_path_parser.h"
 
 #include <cctype>
-#include <stdexcept>
 
 namespace starrocks {
 
@@ -110,34 +109,34 @@ std::string VariantPathParser::parse_quoted_string(char quote) {
 
 StatusOr<VariantPathSegmentPtr> VariantPathParser::parse_array_index() {
     if (!match('[')) {
-        return Status::VariantError(std::format("Expected '[' at position {}", _pos));
+        return Status::VariantError(fmt::format("Expected '[' at position {}", static_cast<int>(_pos)));
     }
 
     std::string indexStr = parse_number();
     if (indexStr.empty()) {
-        return Status::VariantError(std::format("Expected array index after '[' at position {}", _pos));
+        return Status::VariantError(fmt::format("Expected array index after '[' at position {}", static_cast<int>(_pos)));
     }
 
     if (!match(']')) {
-        return Status::VariantError(std::format("Expected ']' after array index '{}' at position {}", indexStr, _pos));
+        return Status::VariantError(fmt::format("Expected ']' after array index '{}' at position {}", indexStr, static_cast<int>(_pos)));
     }
 
     try {
         int index = std::stoi(indexStr);
         return std::make_unique<ArrayExtraction>(index);
     } catch (const std::exception&) {
-        return Status::VariantError(std::format("Invalid array index '{}' at position {}", indexStr, _pos));
+        return Status::VariantError(fmt::format("Invalid array index '{}' at position {}", indexStr, static_cast<int>(_pos)));
     }
 }
 
 StatusOr<VariantPathSegmentPtr> VariantPathParser::parse_quoted_key() {
     if (!match('[')) {
-        return Status::VariantError(std::format("Expected '[' at position {}", _pos));
+        return Status::VariantError(fmt::format("Expected '[' at position {}", static_cast<int>(_pos)));
     }
 
     char quote = peek();
     if (quote != '\'' && quote != '"') {
-        return Status::VariantError(std::format("Expected quote (\" or ') at position {}, found '{}'", _pos, quote));
+        return Status::VariantError(fmt::format("Expected quote (\" or ') at position {}, found '{}'", static_cast<int>(_pos), quote));
     }
 
     advance(); // consume quote
@@ -146,11 +145,11 @@ StatusOr<VariantPathSegmentPtr> VariantPathParser::parse_quoted_key() {
 
     if (!match(quote)) {
         return Status::VariantError(
-                std::format("Expected closing quote '{}' at position {}, found '{}'", quote, _pos, peek()));
+                fmt::format("Expected closing quote '{}' at position {}, found '{}'", quote, static_cast<int>(_pos), peek()));
     }
 
     if (!match(']')) {
-        return Status::VariantError(std::format("Expected ']' after quoted key '{}' at position {}", key, _pos));
+        return Status::VariantError(fmt::format("Expected ']' after quoted key '{}' at position {}", key, static_cast<int>(_pos)));
     }
 
     return std::make_unique<ObjectExtraction>(key);
@@ -158,12 +157,12 @@ StatusOr<VariantPathSegmentPtr> VariantPathParser::parse_quoted_key() {
 
 StatusOr<VariantPathSegmentPtr> VariantPathParser::parse_object_key() {
     if (!match('.')) {
-        return Status::VariantError(std::format("Expected '.' at position {}", _pos));
+        return Status::VariantError(fmt::format("Expected '.' at position {}", static_cast<int>(_pos)));
     }
 
     std::string key = parse_unquoted_key();
     if (key.empty()) {
-        return Status::VariantError(std::format("Expected key after '.' at position {}", _pos));
+        return Status::VariantError(fmt::format("Expected key after '.' at position {}", static_cast<int>(_pos)));
     }
 
     return std::make_unique<ObjectExtraction>(key);
@@ -171,7 +170,7 @@ StatusOr<VariantPathSegmentPtr> VariantPathParser::parse_object_key() {
 
 StatusOr<VariantPathSegmentPtr> VariantPathParser::parse_segment() {
     if (is_at_end()) {
-        return Status::VariantError(std::format("Unexpected end of input at position {}", _pos));
+        return Status::VariantError(fmt::format("Unexpected end of input at position {}", static_cast<int>(_pos)));
     }
 
     if (char c = peek(); c == '.') {
@@ -196,10 +195,10 @@ StatusOr<VariantPathSegmentPtr> VariantPathParser::parse_segment() {
 
         // Reset position if both failed
         _pos = saved_pos;
-        return Status::VariantError(std::format("Failed to parse segment at position {}", _pos));
+        return Status::VariantError(fmt::format("Failed to parse segment at position {}", static_cast<int>(_pos)));
     }
 
-    return Status::VariantError(std::format("Unexpected character '{}' at position {}", peek(), _pos));
+    return Status::VariantError(fmt::format("Unexpected character '{}' at position {}", peek(), static_cast<int>(_pos)));
 }
 
 StatusOr<std::vector<VariantPathSegmentPtr>> VariantPathParser::parse() {
@@ -233,7 +232,7 @@ StatusOr<Variant> VariantPathParser::seek(const Variant* variant, const std::vec
             auto result = current.get_object_by_key(object_segment->get_key());
             if (!result.ok()) {
                 return Status::VariantError(
-                        std::format("Object key '{}' not found in variant", object_segment->get_key()));
+                        fmt::format("Object key '{}' not found in variant", std::string(object_segment->get_key())));
             }
 
             current = std::move(result.value());
@@ -242,7 +241,7 @@ StatusOr<Variant> VariantPathParser::seek(const Variant* variant, const std::vec
             auto result = current.get_element_at_index(array_segment->get_index());
             if (!result.ok()) {
                 return Status::VariantError(
-                        std::format("Array index {} out of bounds in variant", array_segment->get_index()));
+                        fmt::format("Array index {} out of bounds in variant", static_cast<int>(array_segment->get_index())));
             }
 
             current = std::move(result.value());

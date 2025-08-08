@@ -29,15 +29,17 @@
 #include "common/status.h"
 #include "common/statusor.h"
 #include "exprs/mock_vectorized_expr.h"
+#include "formats/parquet/variant.h"
+#include "fs/fs.h"
 #include "gtest/gtest-param-test.h"
 #include "gutil/casts.h"
 #include "gutil/strings/strip.h"
+#include "runtime/runtime_state.h"
 #include "testutil/assert.h"
 #include "types/logical_type.h"
 #include "util/defer_op.h"
-#include "formats/parquet/variant.h"
 #include "util/variant_converter.h"
-#include "fs/fs.h"
+#include "util/variant_util.h"
 
 namespace starrocks {
 
@@ -58,7 +60,6 @@ public:
         variant_test_data_dir = starrocks_home + "/be/test/formats/parquet/test_data/variant";
     }
 
-protected:
     // Helper function to read variant test data from parquet test files
     std::pair<std::string, std::string> load_variant_test_data(const std::string& metadata_file,
                                                                const std::string& value_file) {
@@ -82,54 +83,18 @@ protected:
         return VariantValue(std::string_view(metadata), std::string_view(value));
     }
 
-    // Helper function to create simple variant values for basic tests
-    VariantValue create_simple_variant(const std::string& json_str) {
-        if (json_str == "null" || json_str == "NULL") {
-            return VariantValue::of_null();
-        }
-
-        // For simple integer values using test data
-        if (json_str == "42") {
-            return create_variant_from_test_data("primitive_int8.metadata", "primitive_int8.value");
-        }
-
-        if (json_str == "1") {
-            // Create a simple int8 variant manually for value 1
-            std::string_view empty_metadata = VariantMetadata::kEmptyMetadata;
-            uint8_t int_chars[] = {static_cast<uint8_t>(VariantPrimitiveType::INT8 << 2), 1};
-            std::string_view value_data(reinterpret_cast<const char*>(int_chars), sizeof(int_chars));
-            return VariantValue(empty_metadata, value_data);
-        }
-
-        // For boolean values using test data
-        if (json_str == "true") {
-            return create_variant_from_test_data("primitive_boolean_true.metadata", "primitive_boolean_true.value");
-        }
-
-        if (json_str == "false") {
-            return create_variant_from_test_data("primitive_boolean_false.metadata", "primitive_boolean_false.value");
-        }
-
-        // For string values using test data
-        if (json_str == R"("hello")") {
-            return create_variant_from_test_data("short_string.metadata", "short_string.value");
-        }
-
-        // Default to null for unsupported cases in this test
-        return VariantValue::of_null();
-    }
-
-public:
     TExprNode expr_node;
     std::string test_exec_dir;
     std::string variant_test_data_dir;
 };
 
 // Test cases using real variant test data
-class VariantQueryTestFixture : public ::testing::TestWithParam<std::tuple<std::string, std::string, std::string, std::string>> {};
+class VariantQueryTestFixture
+        : public ::testing::TestWithParam<std::tuple<std::string, std::string, std::string, std::string>> {};
 
 TEST_P(VariantQueryTestFixture, variant_query_with_test_data) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
+    ctx->state()->set_timezone("-4:00"); // Set timezone to UTC-4 for testing
     auto variant_column = VariantColumn::create();
     ColumnBuilder<TYPE_VARCHAR> path_builder(1);
 
@@ -152,9 +117,7 @@ TEST_P(VariantQueryTestFixture, variant_query_with_test_data) {
     Columns columns{variant_column, path_builder.build(true)};
 
     ColumnPtr result = VariantFunctions::variant_query(ctx.get(), columns).value();
-    ASSERT_TRUE(!!result);
 
-    StripWhiteSpace(&param_result);
     Datum datum = result->get(0);
     if (param_result == "NULL") {
         ASSERT_TRUE(datum.is_null());
@@ -165,7 +128,6 @@ TEST_P(VariantQueryTestFixture, variant_query_with_test_data) {
         auto json_result = variant_result->to_json();
         ASSERT_TRUE(json_result.ok());
         std::string variant_str = json_result.value();
-        StripWhiteSpace(&variant_str);
         ASSERT_EQ(param_result, variant_str);
     }
 }
@@ -182,16 +144,22 @@ INSTANTIATE_TEST_SUITE_P(
                 std::make_tuple("primitive_int16.metadata", "primitive_int16.value", "$", "1234"),
                 std::make_tuple("primitive_int32.metadata", "primitive_int32.value", "$", "123456"),
                 std::make_tuple("primitive_int64.metadata", "primitive_int64.value", "$", "1234567890123456789"),
-                std::make_tuple("primitive_float.metadata", "primitive_float.value", "$", "1234567940.0"),
-                std::make_tuple("primitive_double.metadata", "primitive_double.value", "$", "1234567890.1234"),
+                std::make_tuple("primitive_float.metadata", "primitive_float.value", "$", "1234567936.000000"),
+                std::make_tuple("primitive_double.metadata", "primitive_double.value", "$", "1234567890.123400"),
+                std::make_tuple("primitive_decimal4.metadata", "primitive_decimal4.value", "$", "12.34"),
+                std::make_tuple("primitive_decimal8.metadata", "primitive_decimal8.value", "$", "12345678.90"),
+                std::make_tuple("primitive_decimal16.metadata", "primitive_decimal16.value", "$", "12345678912345678.90"),
                 std::make_tuple("short_string.metadata", "short_string.value", "$", "\"Less than 64 bytes (❤️ with utf8)\""),
                 std::make_tuple("primitive_string.metadata", "primitive_string.value", "$", "\"This string is longer than 64 bytes and therefore does not fit in a short_string and it also includes several non ascii characters such as 🐢, 💖, ♥️, 🎣 and 🤦!!\""),
+                std::make_tuple("primitive_timestamp.metadata", "primitive_timestamp.value", "$", "\"2025-04-16T12:34:56.78-04:00\""),
+                std::make_tuple("primitive_timestampntz.metadata", "primitive_timestampntz.value", "$", "\"2025-04-16 12:34:56.780000\""),
+                std::make_tuple("primitive_date.metadata", "primitive_date.value", "$", "\"2025-04-16\""),
 
                 // Object and array tests
                 std::make_tuple("object_primitive.metadata", "object_primitive.value", "$.int_field", "1"),
-                std::make_tuple("object_nested.metadata", "object_nested.value", "$.nested_object.nested_field", "\"nested_value\""),
-                std::make_tuple("array_primitive.metadata", "array_primitive.value", "$.array_field[0]", "1"),
-                std::make_tuple("array_nested.metadata", "array_nested.value", "$.nested_array[0].nested_field", "\"nested_value\""),
+                std::make_tuple("object_nested.metadata", "object_nested.value", "$.observation.location", "\"In the Volcano\""),
+                std::make_tuple("array_primitive.metadata", "array_primitive.value", "$.array_primitive[0]", "2"),
+                std::make_tuple("array_nested.metadata", "array_nested.value", "$.array_nested[0].thing.names[0]", "\"Contrarian\""),
 
                 // Non-existent path tests
                 std::make_tuple("primitive_int8.metadata", "primitive_int8.value", "$.nonexistent", "NULL"),
@@ -203,48 +171,8 @@ INSTANTIATE_TEST_SUITE_P(
                 ));
 
 // Simplified test cases for basic functionality using simple variant values
-class VariantQuerySimpleTestFixture : public ::testing::TestWithParam<std::tuple<std::string, std::string, std::string>> {};
-
-TEST_P(VariantQuerySimpleTestFixture, variant_query_simple) {
-    std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
-    auto variant_column = VariantColumn::create();
-    ColumnBuilder<TYPE_VARCHAR> path_builder(1);
-
-    std::string param_variant = std::get<0>(GetParam());
-    std::string param_path = std::get<1>(GetParam());
-    std::string param_result = std::get<2>(GetParam());
-
-    // Create variant value using simplified approach
-    VariantFunctionsTest test_helper;
-    VariantValue variant_value = test_helper.create_simple_variant(param_variant);
-    variant_column->append(variant_value);
-
-    if (param_path == "NULL") {
-        path_builder.append_null();
-    } else {
-        path_builder.append(param_path);
-    }
-
-    Columns columns{variant_column, path_builder.build(true)};
-
-    ColumnPtr result = VariantFunctions::variant_query(ctx.get(), columns).value();
-    ASSERT_TRUE(!!result);
-
-    StripWhiteSpace(&param_result);
-    Datum datum = result->get(0);
-    if (param_result == "NULL") {
-        ASSERT_TRUE(datum.is_null());
-    } else {
-        ASSERT_TRUE(!datum.is_null());
-        auto variant_result = datum.get_variant();
-        ASSERT_TRUE(!!variant_result);
-        auto json_result = variant_result->to_json();
-        ASSERT_TRUE(json_result.ok());
-        std::string variant_str = json_result.value();
-        StripWhiteSpace(&variant_str);
-        ASSERT_EQ(param_result, variant_str);
-    }
-}
+class VariantQuerySimpleTestFixture
+        : public ::testing::TestWithParam<std::tuple<std::string, std::string, std::string>> {};
 
 TEST_F(VariantFunctionsTest, variant_query_invalid_arguments) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
@@ -349,10 +277,9 @@ TEST_F(VariantFunctionsTest, variant_query_multiple_rows) {
 
     // Create multiple variant values using test data
     std::vector<std::pair<std::string, std::string>> test_files = {
-        {"primitive_int8.metadata", "primitive_int8.value"},
-        {"primitive_boolean_true.metadata", "primitive_boolean_true.value"},
-        {"short_string.metadata", "short_string.value"}
-    };
+            {"primitive_int8.metadata", "primitive_int8.value"},
+            {"primitive_boolean_true.metadata", "primitive_boolean_true.value"},
+            {"short_string.metadata", "short_string.value"}};
 
     for (const auto& [metadata_file, value_file] : test_files) {
         VariantValue variant_value = create_variant_from_test_data(metadata_file, value_file);

@@ -155,7 +155,7 @@ StatusOr<RunTimeCppType<TYPE_VARCHAR>> cast_variant_to_string(const Variant& var
 }
 
 template <LogicalType ResultType, bool AllowThrowException>
-StatusOr<RunTimeCppType<ResultType>> cast_variant_value_to(const VariantValue& value, const cctz::time_zone& zone,
+Status cast_variant_value_to(const Variant& variant, const cctz::time_zone& zone,
                                                            ColumnBuilder<ResultType>& result) {
     if constexpr (!lt_is_arithmetic<ResultType> && !lt_is_string<ResultType> && ResultType != TYPE_VARIANT) {
         if constexpr (AllowThrowException) {
@@ -167,13 +167,13 @@ StatusOr<RunTimeCppType<ResultType>> cast_variant_value_to(const VariantValue& v
         return Status::OK();
     }
 
+    VariantValue variant_value = *variant.to_value();
+
     if constexpr (ResultType == TYPE_VARIANT) {
         // Directly return the variant value
-        result.append(std::move(value));
+        result.append(std::move(variant_value));
         return Status::OK();
     }
-
-    Variant variant(value.get_metadata(), value.get_value());
 
     Status status;
     if constexpr (ResultType == TYPE_BOOLEAN) {
@@ -181,7 +181,7 @@ StatusOr<RunTimeCppType<ResultType>> cast_variant_value_to(const VariantValue& v
     } else if constexpr (lt_is_arithmetic<ResultType>) {
         status = cast_variant_to_arithmetic<ResultType>(variant, result);
     } else if constexpr (lt_is_string<ResultType>) {
-        status = cast_variant_to_string(variant, value, zone, result);
+        status = cast_variant_to_string(variant, variant_value, zone, result);
     }
 
     if (!status.ok()) {
