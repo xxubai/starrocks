@@ -116,7 +116,6 @@ set(UTIL_FILES
   byte_buffer.cpp
   variant_converter.cpp
   variant_util.cpp
-  variant_value.cpp
 )
 
 add_library(Util STATIC
