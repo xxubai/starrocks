@@ -42,6 +42,8 @@ Status VariantFunctions::preload_variant_segments(FunctionContext* context, Func
 
     // Check if the json path column is constant
     if (!context->is_notnull_constant_column(1)) {
+        auto* path_state = new NativeVariantPath();
+        context->set_function_state(scope, path_state);
         return Status::OK();
     }
 
@@ -54,6 +56,7 @@ Status VariantFunctions::preload_variant_segments(FunctionContext* context, Func
     auto* path_state = new NativeVariantPath();
     path_state->variant_path.reset(std::move(variant_path_status.value()));
     context->set_function_state(scope, path_state);
+    VLOG(10) << "Preloaded variant path: " << path_string;
 
     return Status::OK();
 }
@@ -77,11 +80,8 @@ static StatusOr<VariantPath*> get_or_parse_variant_segments(FunctionContext* con
 
 Status VariantFunctions::clear_variant_segments(FunctionContext* context, FunctionContext::FunctionStateScope scope) {
     if (scope == FunctionContext::FRAGMENT_LOCAL) {
-        auto* variant_segments =
-                reinterpret_cast<std::vector<VariantPathExtraction>*>(context->get_function_state(scope));
-        if (variant_segments != nullptr) {
-            delete variant_segments;
-        }
+        auto* variant_path = reinterpret_cast<NativeVariantPath*>(context->get_function_state(scope));
+        delete variant_path;
     }
 
     return Status::OK();
@@ -129,13 +129,12 @@ StatusOr<ColumnPtr> VariantFunctions::_do_variant_query(FunctionContext* context
             Variant variant(metadata, value);
             auto variant_result = VariantPath::seek(&variant, variant_segments_status.value());
             if (!variant_result.ok()) {
+                LOG(ERROR) << "Failed to seek variant path: " << path_slice.to_string()
+                           << "in variant: " << variant_value->to_string();
                 result.append_null();
                 continue;
             }
 
-            std::cout << "Processing row " << row << ": " << variant_value->to_string() << std::endl;
-            std::cout << "Using path: " << path_slice.to_string() << std::endl;
-            std::cout << "Variant query result: " << variant_result.value().to_value()->to_string() << std::endl;
             RuntimeState* state = context->state();
             cctz::time_zone zone;
             if (state == nullptr) {
@@ -143,8 +142,6 @@ StatusOr<ColumnPtr> VariantFunctions::_do_variant_query(FunctionContext* context
             } else {
                 zone = context->state()->timezone_obj();
             }
-
-            std::cout << "About to call cast_variant_value_to..." << std::endl;
 
             if constexpr (ResultType == TYPE_VARIANT) {
                 // For TYPE_VARIANT, convert back to VariantValue
@@ -154,21 +151,16 @@ StatusOr<ColumnPtr> VariantFunctions::_do_variant_query(FunctionContext* context
                     continue;
                 }
 
-                // Now VariantValue owns its data, so this is safe
-                std::cout << "Converting variant to VariantValue: " << variant_value_result->to_string() << std::endl;
                 result.append(std::move(variant_value_result.value()));
-                std::cout << "cast_variant_value_to succeeded" << std::endl;
             } else {
                 Status status = cast_variant_value_to<ResultType, true>(variant_result.value(), zone, result);
-                std::cout << "cast_variant_value_to returned with status: " << status.to_string() << std::endl;
                 if (!status.ok()) {
-                    std::cout << "Cast variant value failed: " << status.to_string() << std::endl;
                     result.append_null();
-                } else {
-                    std::cout << "cast_variant_value_to succeeded" << std::endl;
                 }
             }
         } catch (const std::exception& e) {
+            LOG(ERROR) << "Error processing variant query: " << variant_value->to_string() << " with path "
+                       << path_slice.to_string() << ": " << e.what();
             result.append_null();
         }
     }

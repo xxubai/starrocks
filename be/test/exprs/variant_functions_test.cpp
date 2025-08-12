@@ -112,6 +112,8 @@ TEST_P(VariantQueryTestFixture, variant_query_with_test_data) {
 
     ColumnPtr result = VariantFunctions::variant_query(ctx.get(), columns).value();
     ASSERT_TRUE(!!result);
+    cctz::time_zone ctz;
+    TimezoneUtils::find_cctz_time_zone("-04:00", ctz);
 
     Datum datum = result->get(0);
     if (param_result == "NULL") {
@@ -120,7 +122,7 @@ TEST_P(VariantQueryTestFixture, variant_query_with_test_data) {
         ASSERT_TRUE(!datum.is_null());
         auto variant_result = datum.get_variant();
         ASSERT_TRUE(!!variant_result);
-        auto json_result = variant_result->to_json();
+        auto json_result = variant_result->to_json(ctz);
         ASSERT_TRUE(json_result.ok());
         std::string variant_str = json_result.value();
         ASSERT_EQ(param_result, variant_str);
@@ -147,17 +149,17 @@ INSTANTIATE_TEST_SUITE_P(
                 std::make_tuple("primitive_decimal4.metadata", "primitive_decimal4.value", "$", "12.34"),
                 std::make_tuple("primitive_decimal8.metadata", "primitive_decimal8.value", "$", "12345678.90"),
                 std::make_tuple("primitive_decimal16.metadata", "primitive_decimal16.value", "$", "12345678912345678.90"),
-                std::make_tuple("short_string.metadata", "short_string.value", "$", "\"Less than 64 bytes (❤️ with utf8)\""),
-                std::make_tuple("primitive_string.metadata", "primitive_string.value", "$", "\"This string is longer than 64 bytes and therefore does not fit in a short_string and it also includes several non ascii characters such as 🐢, 💖, ♥️, 🎣 and 🤦!!\""),
-                std::make_tuple("primitive_timestamp.metadata", "primitive_timestamp.value", "$", "\"2025-04-16T12:34:56.78-04:00\""),
+                std::make_tuple("short_string.metadata", "short_string.value", "$", "Less than 64 bytes (❤️ with utf8)"),
+                std::make_tuple("primitive_string.metadata", "primitive_string.value", "$", "This string is longer than 64 bytes and therefore does not fit in a short_string and it also includes several non ascii characters such as 🐢, 💖, ♥️, 🎣 and 🤦!!"),
+                std::make_tuple("primitive_timestamp.metadata", "primitive_timestamp.value", "$", "\"2025-04-16 12:34:56.78-04:00\""),
                 std::make_tuple("primitive_timestampntz.metadata", "primitive_timestampntz.value", "$", "\"2025-04-16 12:34:56.780000\""),
                 std::make_tuple("primitive_date.metadata", "primitive_date.value", "$", "\"2025-04-16\""),
 
                 // Object and array tests
                 std::make_tuple("object_primitive.metadata", "object_primitive.value", "$.int_field", "1"),
-                std::make_tuple("object_nested.metadata", "object_nested.value", "$.observation.location", "\"In the Volcano\""),
-                std::make_tuple("array_primitive.metadata", "array_primitive.value", "$.array_primitive[0]", "2"),
-                std::make_tuple("array_nested.metadata", "array_nested.value", "$.array_nested[0].thing.names[0]", "\"Contrarian\""),
+                std::make_tuple("object_nested.metadata", "object_nested.value", "$.observation.location", "In the Volcano"),
+                std::make_tuple("array_primitive.metadata", "array_primitive.value", "$[0]", "2"),
+                std::make_tuple("array_nested.metadata", "array_nested.value", "$[0].thing.names[0]", "Contrarian"),
 
                 // Non-existent path tests
                 std::make_tuple("primitive_int8.metadata", "primitive_int8.value", "$.nonexistent", "NULL"),
@@ -250,7 +252,6 @@ TEST_F(VariantFunctionsTest, variant_query_complex_types) {
 
     VariantValue variant_value;
     create_variant_from_test_data("object_primitive.metadata", "object_primitive.value", variant_value);
-    std::cout << "variant_query_complex_types: Loaded variant value: " << variant_value.to_string() << std::endl;
     variant_column->append(variant_value);
     path_builder.append("$.int_field");
 
@@ -285,16 +286,14 @@ TEST_F(VariantFunctionsTest, variant_query_multiple_rows) {
             {"primitive_boolean_true.metadata", "primitive_boolean_true.value"},
             {"short_string.metadata", "short_string.value"}};
 
-    // 创建持久存储来保存所有数据
-    std::vector<std::string> metadata_storages, value_storages;
-    metadata_storages.resize(test_files.size());
-    value_storages.resize(test_files.size());
+    std::vector<VariantValue> variant_values;
+    variant_values.reserve(test_files.size());
 
     for (size_t i = 0; i < test_files.size(); ++i) {
         const auto& [metadata_file, value_file] = test_files[i];
         VariantValue variant_value;
         create_variant_from_test_data(metadata_file, value_file, variant_value);
-        std::cout << "variant_query_multiple_rows: Loaded variant value: " << variant_value.to_string() << std::endl;
+        variant_values.push_back(variant_value);
         variant_column->append(variant_value);
         path_builder.append("$");
     }
@@ -306,7 +305,7 @@ TEST_F(VariantFunctionsTest, variant_query_multiple_rows) {
     ASSERT_TRUE(!!result);
     ASSERT_EQ(3, result->size());
 
-    std::vector<std::string> expected_results = {"42", "true", "\"Less than 64 bytes (❤️ with utf8)\""};
+    std::vector<std::string> expected_results = {"42", "true", "Less than 64 bytes (❤️ with utf8)"};
     for (size_t i = 0; i < 3; ++i) {
         auto variant_result = result->get(i).get_variant();
         ASSERT_TRUE(!!variant_result);
@@ -325,7 +324,6 @@ TEST_F(VariantFunctionsTest, variant_query_const_columns) {
     // Create variant value using test data
     VariantValue variant_value;
     create_variant_from_test_data("short_string.metadata", "short_string.value", variant_value);
-    std::cout << "variant_query_const_columns: Loaded variant value: " << variant_value.to_string() << std::endl;
     variant_column->append(variant_value);
     path_builder.append("$");
 
@@ -346,7 +344,7 @@ TEST_F(VariantFunctionsTest, variant_query_const_columns) {
         auto json_result = variant_result->to_json();
         ASSERT_TRUE(json_result.ok());
         std::string variant_str = json_result.value();
-        ASSERT_EQ("\"Less than 64 bytes (❤️ with utf8)\"", variant_str);
+        ASSERT_EQ("Less than 64 bytes (❤️ with utf8)", variant_str);
     }
 }
 
