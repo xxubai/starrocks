@@ -14,8 +14,9 @@
 
 #pragma once
 
-#include <memory>
 #include <string>
+#include <utility>
+#include <variant>
 #include <vector>
 
 #include "common/statusor.h"
@@ -24,84 +25,85 @@
 
 namespace starrocks {
 
-// Base class for variant path segments
-class VariantPathSegment {
-public:
-    virtual ~VariantPathSegment() = default;
-    virtual bool is_object_extraction() const = 0;
-    virtual bool is_array_extraction() const = 0;
-};
-
 // Object key extraction like .field or ['field'] or ["field"]
-class ObjectExtraction : public VariantPathSegment {
+class ObjectExtraction {
 private:
     std::string _key;
 
 public:
-    explicit ObjectExtraction(const std::string& key) : _key(key) {}
-
-    bool is_object_extraction() const override { return true; }
-    bool is_array_extraction() const override { return false; }
+    explicit ObjectExtraction(std::string key) : _key(std::move(key)) {}
 
     const std::string& get_key() const { return _key; }
 };
 
 // Array index extraction like [123]
-class ArrayExtraction : public VariantPathSegment {
+class ArrayExtraction {
 private:
     int _index;
 
 public:
     explicit ArrayExtraction(int index) : _index(index) {}
 
-    bool is_object_extraction() const override { return false; }
-    bool is_array_extraction() const override { return true; }
-
     int get_index() const { return _index; }
 };
 
-using VariantPathSegmentPtr = std::unique_ptr<VariantPathSegment>;
+// Use variant instead of polymorphic pointers
+using VariantPathExtraction = std::variant<ObjectExtraction, ArrayExtraction>;
+
+struct VariantPath {
+    std::vector<VariantPathExtraction> segments;
+
+    explicit VariantPath(std::vector<VariantPathExtraction> segments) : segments(std::move(segments)) {}
+
+    VariantPath() = default;
+    VariantPath(VariantPath&&) = default;
+    VariantPath(const VariantPath& rhs) = default;
+    ~VariantPath() = default;
+
+    void reset(const VariantPath& rhs);
+    void reset(VariantPath&& rhs);
+
+    // Seek into a variant using the parsed segments
+    static StatusOr<Variant> seek(const Variant* variant, const VariantPath* variant_path);
+};
+
+struct NativeVariantPath {
+    VariantPath variant_path;
+};
 
 // Parser for variant path expressions
 class VariantPathParser {
 public:
-    explicit VariantPathParser(const Slice& input) : _input(input), _pos(0) {}
-
-    explicit VariantPathParser(const std::string& input) : _input(input), _pos(0) {}
-
-    VariantPathParser() : _input(Slice()), _pos(0) {}
-
-    VariantPathParser(const VariantPathParser&) = default;
-    VariantPathParser(VariantPathParser&&) = default;
-    ~VariantPathParser() = default;
-
-    // Parse a JSON path string and return array of segments
-    StatusOr<std::vector<VariantPathSegmentPtr>> parse();
-
-    // Seek into a variant using the parsed segments
-    // Returns a StatusOr<Variant> which contains the result or an error status
-    static StatusOr<Variant> seek(const Variant* variant, const std::vector<VariantPathSegmentPtr>& segments);
+    // Parse a JSON path string and return segments vector
+    static StatusOr<VariantPath> parse(Slice input);
+    static StatusOr<VariantPath> parse(const std::string& input);
 
 private:
-    Slice _input;
-    size_t _pos;
+    // Internal parser state for static methods
+    struct ParserState {
+        Slice input;
+        size_t pos = 0;
 
-    bool is_at_end() const;
-    char peek() const;
-    char advance();
-    bool match(char expected);
+        explicit ParserState(Slice inp) : input(inp) {}
+
+        bool is_at_end() const;
+        char peek() const;
+        char advance();
+        bool match(char expected);
+    };
+
     static bool is_digit(char c);
     static bool is_valid_key_char(char c);
 
     // Parser methods
-    bool parse_root();
-    StatusOr<VariantPathSegmentPtr> parse_segment();
-    StatusOr<VariantPathSegmentPtr> parse_array_index();
-    StatusOr<VariantPathSegmentPtr> parse_object_key();
-    StatusOr<VariantPathSegmentPtr> parse_quoted_key();
-    std::string parse_number();
-    std::string parse_unquoted_key();
-    std::string parse_quoted_string(char quote);
+    static bool parse_root(ParserState& state);
+    static StatusOr<VariantPathExtraction> parse_segment(ParserState& state);
+    static StatusOr<ArrayExtraction> parse_array_index(ParserState& state);
+    static StatusOr<ObjectExtraction> parse_object_key(ParserState& state);
+    static StatusOr<ObjectExtraction> parse_quoted_key(ParserState& state);
+    static std::string parse_number(ParserState& state);
+    static std::string parse_unquoted_key(ParserState& state);
+    static std::string parse_quoted_string(ParserState& state, char quote);
 };
 
 } // namespace starrocks

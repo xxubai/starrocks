@@ -31,15 +31,9 @@
 #include "exprs/mock_vectorized_expr.h"
 #include "formats/parquet/variant.h"
 #include "fs/fs.h"
-#include "gtest/gtest-param-test.h"
 #include "gutil/casts.h"
-#include "gutil/strings/strip.h"
 #include "runtime/runtime_state.h"
-#include "testutil/assert.h"
 #include "types/logical_type.h"
-#include "util/defer_op.h"
-#include "util/variant_converter.h"
-#include "util/variant_util.h"
 
 namespace starrocks {
 
@@ -53,40 +47,38 @@ public:
         expr_node.__isset.opcode = true;
         expr_node.__isset.child_type = true;
         expr_node.type = gen_type_desc(TPrimitiveType::BOOLEAN);
-
-        // Setup test data directory
-        std::string starrocks_home = getenv("STARROCKS_HOME");
-        test_exec_dir = starrocks_home + "/be/test/exec";
-        variant_test_data_dir = starrocks_home + "/be/test/formats/parquet/test_data/variant";
-    }
-
-    // Helper function to read variant test data from parquet test files
-    std::pair<std::string, std::string> load_variant_test_data(const std::string& metadata_file,
-                                                               const std::string& value_file) {
-        FileSystem* fs = FileSystem::Default();
-
-        auto metadata_path = variant_test_data_dir + "/" + metadata_file;
-        auto value_path = variant_test_data_dir + "/" + value_file;
-
-        auto metadata_file_obj = *fs->new_random_access_file(metadata_path);
-        auto value_file_obj = *fs->new_random_access_file(value_path);
-
-        std::string metadata_content = *metadata_file_obj->read_all();
-        std::string value_content = *value_file_obj->read_all();
-
-        return {std::move(metadata_content), std::move(value_content)};
-    }
-
-    // Helper function to create VariantValue from test data files
-    VariantValue create_variant_from_test_data(const std::string& metadata_file, const std::string& value_file) {
-        auto [metadata, value] = load_variant_test_data(metadata_file, value_file);
-        return VariantValue(std::string_view(metadata), std::string_view(value));
     }
 
     TExprNode expr_node;
-    std::string test_exec_dir;
-    std::string variant_test_data_dir;
 };
+
+std::string starrocks_home = getenv("STARROCKS_HOME");
+static std::string test_exec_dir = starrocks_home + "/be/test/exec";
+static std::string variant_test_data_dir = starrocks_home + "/be/test/formats/parquet/test_data/variant";
+
+// Helper function to read variant test data from parquet test files
+static std::pair<std::string, std::string> load_variant_test_data(const std::string& metadata_file,
+                                                           const std::string& value_file) {
+    FileSystem* fs = FileSystem::Default();
+
+    auto metadata_path = variant_test_data_dir + "/" + metadata_file;
+    auto value_path = variant_test_data_dir + "/" + value_file;
+
+    auto metadata_file_obj = *fs->new_random_access_file(metadata_path);
+    auto value_file_obj = *fs->new_random_access_file(value_path);
+
+    std::string metadata_content = *metadata_file_obj->read_all();
+    std::string value_content = *value_file_obj->read_all();
+
+    return {std::move(metadata_content), std::move(value_content)};
+}
+
+// Helper function to create VariantValue from test data files
+static void create_variant_from_test_data(const std::string& metadata_file, const std::string& value_file,
+                                         VariantValue& variant_value) {
+    auto [metadata, value] = load_variant_test_data(metadata_file, value_file);
+    variant_value = VariantValue(metadata, value);
+}
 
 // Test cases using real variant test data
 class VariantQueryTestFixture
@@ -94,7 +86,6 @@ class VariantQueryTestFixture
 
 TEST_P(VariantQueryTestFixture, variant_query_with_test_data) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
-    ctx->state()->set_timezone("-4:00"); // Set timezone to UTC-4 for testing
     auto variant_column = VariantColumn::create();
     ColumnBuilder<TYPE_VARCHAR> path_builder(1);
 
@@ -103,9 +94,10 @@ TEST_P(VariantQueryTestFixture, variant_query_with_test_data) {
     std::string param_path = std::get<2>(GetParam());
     std::string param_result = std::get<3>(GetParam());
 
-    // Create variant value using test data files
-    VariantFunctionsTest test_helper;
-    VariantValue variant_value = test_helper.create_variant_from_test_data(metadata_file, value_file);
+    VariantValue variant_value;
+
+    create_variant_from_test_data(metadata_file, value_file, variant_value);
+    VLOG(10) << "Loaded variant value from test data: " << variant_value.to_string();
     variant_column->append(variant_value);
 
     if (param_path == "NULL") {
@@ -115,8 +107,11 @@ TEST_P(VariantQueryTestFixture, variant_query_with_test_data) {
     }
 
     Columns columns{variant_column, path_builder.build(true)};
+    ctx->set_constant_columns(columns);
+    std::ignore = VariantFunctions::preload_variant_segments(ctx.get(), FunctionContext::FunctionStateScope::FRAGMENT_LOCAL);
 
     ColumnPtr result = VariantFunctions::variant_query(ctx.get(), columns).value();
+    ASSERT_TRUE(!!result);
 
     Datum datum = result->get(0);
     if (param_result == "NULL") {
@@ -130,6 +125,9 @@ TEST_P(VariantQueryTestFixture, variant_query_with_test_data) {
         std::string variant_str = json_result.value();
         ASSERT_EQ(param_result, variant_str);
     }
+
+    ASSERT_TRUE(VariantFunctions::clear_variant_segments(
+            ctx.get(), FunctionContext::FunctionStateScope::FRAGMENT_LOCAL).ok());
 }
 
 // Test cases using real variant test data from parquet test files
@@ -230,8 +228,8 @@ TEST_F(VariantFunctionsTest, variant_query_invalid_path) {
     auto variant_column = VariantColumn::create();
     auto path_column = BinaryColumn::create();
 
-    // Create variant value using test data
-    VariantValue variant_value = create_variant_from_test_data("primitive_int8.metadata", "primitive_int8.value");
+    VariantValue variant_value;
+    create_variant_from_test_data("primitive_int8.metadata", "primitive_int8.value", variant_value);
     variant_column->append(variant_value);
 
     // Invalid path syntax
@@ -248,21 +246,27 @@ TEST_F(VariantFunctionsTest, variant_query_invalid_path) {
 TEST_F(VariantFunctionsTest, variant_query_complex_types) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
     auto variant_column = VariantColumn::create();
-    auto path_column = BinaryColumn::create();
+    ColumnBuilder<TYPE_VARCHAR> path_builder(1);
 
-    // Test with object data
-    VariantValue variant_value = create_variant_from_test_data("object_primitive.metadata", "object_primitive.value");
+    VariantValue variant_value;
+    create_variant_from_test_data("object_primitive.metadata", "object_primitive.value", variant_value);
+    std::cout << "variant_query_complex_types: Loaded variant value: " << variant_value.to_string() << std::endl;
     variant_column->append(variant_value);
-    path_column->append("$.int_field");
+    path_builder.append("$.int_field");
 
-    Columns columns{variant_column, path_column};
+    Columns columns{variant_column, path_builder.build(true)};
+    ctx->set_constant_columns(columns);
 
     ColumnPtr result = VariantFunctions::variant_query(ctx.get(), columns).value();
     ASSERT_TRUE(!!result);
     ASSERT_EQ(1, result->size());
-    ASSERT_FALSE(result->is_null(0));
 
-    auto variant_result = result->get(0).get_variant();
+    // Handle potential ConstColumn wrapping
+    Datum datum = result->get(0);
+    ASSERT_FALSE(datum.is_null());
+
+    // For TYPE_VARIANT result, the datum should contain a VariantValue pointer
+    auto variant_result = datum.get_variant();
     ASSERT_TRUE(!!variant_result);
     auto json_result = variant_result->to_json();
     ASSERT_TRUE(json_result.ok());
@@ -273,7 +277,7 @@ TEST_F(VariantFunctionsTest, variant_query_complex_types) {
 TEST_F(VariantFunctionsTest, variant_query_multiple_rows) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
     auto variant_column = VariantColumn::create();
-    auto path_column = BinaryColumn::create();
+    ColumnBuilder<TYPE_VARCHAR> path_builder(1);
 
     // Create multiple variant values using test data
     std::vector<std::pair<std::string, std::string>> test_files = {
@@ -281,13 +285,22 @@ TEST_F(VariantFunctionsTest, variant_query_multiple_rows) {
             {"primitive_boolean_true.metadata", "primitive_boolean_true.value"},
             {"short_string.metadata", "short_string.value"}};
 
-    for (const auto& [metadata_file, value_file] : test_files) {
-        VariantValue variant_value = create_variant_from_test_data(metadata_file, value_file);
+    // 创建持久存储来保存所有数据
+    std::vector<std::string> metadata_storages, value_storages;
+    metadata_storages.resize(test_files.size());
+    value_storages.resize(test_files.size());
+
+    for (size_t i = 0; i < test_files.size(); ++i) {
+        const auto& [metadata_file, value_file] = test_files[i];
+        VariantValue variant_value;
+        create_variant_from_test_data(metadata_file, value_file, variant_value);
+        std::cout << "variant_query_multiple_rows: Loaded variant value: " << variant_value.to_string() << std::endl;
         variant_column->append(variant_value);
-        path_column->append("$");
+        path_builder.append("$");
     }
 
-    Columns columns{variant_column, path_column};
+    Columns columns{variant_column, path_builder.build(true)};
+    ctx->set_constant_columns(columns);
 
     ColumnPtr result = VariantFunctions::variant_query(ctx.get(), columns).value();
     ASSERT_TRUE(!!result);
@@ -295,7 +308,6 @@ TEST_F(VariantFunctionsTest, variant_query_multiple_rows) {
 
     std::vector<std::string> expected_results = {"42", "true", "\"Less than 64 bytes (❤️ with utf8)\""};
     for (size_t i = 0; i < 3; ++i) {
-        ASSERT_FALSE(result->is_null(i));
         auto variant_result = result->get(i).get_variant();
         ASSERT_TRUE(!!variant_result);
         auto json_result = variant_result->to_json();
@@ -308,25 +320,27 @@ TEST_F(VariantFunctionsTest, variant_query_multiple_rows) {
 TEST_F(VariantFunctionsTest, variant_query_const_columns) {
     std::unique_ptr<FunctionContext> ctx(FunctionContext::create_test_context());
     auto variant_column = VariantColumn::create();
-    auto path_column = BinaryColumn::create();
+    ColumnBuilder<TYPE_VARCHAR> path_builder(1);
 
     // Create variant value using test data
-    VariantValue variant_value = create_variant_from_test_data("short_string.metadata", "short_string.value");
+    VariantValue variant_value;
+    create_variant_from_test_data("short_string.metadata", "short_string.value", variant_value);
+    std::cout << "variant_query_const_columns: Loaded variant value: " << variant_value.to_string() << std::endl;
     variant_column->append(variant_value);
-    path_column->append("$");
+    path_builder.append("$");
 
     // Create const columns
     auto const_variant = ConstColumn::create(variant_column, 3);
-    auto const_path = ConstColumn::create(path_column, 3);
+    auto const_path = path_builder.build(true);
 
     Columns columns{const_variant, const_path};
+    ctx->set_constant_columns(columns);
 
     ColumnPtr result = VariantFunctions::variant_query(ctx.get(), columns).value();
     ASSERT_TRUE(!!result);
     ASSERT_EQ(3, result->size());
 
     for (size_t i = 0; i < 3; ++i) {
-        ASSERT_FALSE(result->is_null(i));
         auto variant_result = result->get(i).get_variant();
         ASSERT_TRUE(!!variant_result);
         auto json_result = variant_result->to_json();

@@ -21,7 +21,6 @@
 #include "formats/parquet/variant.h"
 #include "function_helper.h"
 #include "types/logical_type.h"
-#include "util/variant_converter.h"
 
 namespace starrocks {
 

@@ -62,67 +62,6 @@ StatusOr<RunTimeCppType<TYPE_BOOLEAN>> cast_variant_to_bool(const Variant& varia
             fmt::format("Cannot cast variant of type {} to boolean", VariantUtil::type_to_string(type)));
 }
 
-template <LogicalType ResultType>
-StatusOr<RunTimeColumnType<ResultType>> cast_variant_to_arithmetic(const Variant& variant,
-                                                                   ColumnBuilder<ResultType>& result) {
-    VariantType type = variant.type();
-
-    switch (type) {
-    case VariantType::NULL_TYPE: {
-        result.append_null();
-        return Status::OK();
-    }
-    case VariantType::BOOLEAN: {
-        auto value = variant.get_bool();
-        if (!value.ok()) {
-            return value.status();
-        }
-
-        result.append(static_cast<RunTimeCppType<ResultType>>(value.value()));
-        return Status::OK();
-    }
-    case VariantType::INT8: {
-        auto value = variant.get_int8();
-        if (!value.ok()) {
-            return value.status();
-        }
-
-        result.append(static_cast<RunTimeCppType<ResultType>>(value.value()));
-        return Status::OK();
-    }
-    case VariantType::INT16: {
-        auto value = variant.get_int16();
-        if (!value.ok()) {
-            return value.status();
-        }
-
-        result.append(static_cast<RunTimeCppType<ResultType>>(value.value()));
-        return Status::OK();
-    }
-    case VariantType::INT32: {
-        auto value = variant.get_int32();
-        if (!value.ok()) {
-            return value.status();
-        }
-
-        result.append(static_cast<RunTimeCppType<ResultType>>(value.value()));
-        return Status::OK();
-    }
-    case VariantType::INT64: {
-        auto value = variant.get_int64();
-        if (!value.ok()) {
-            return value.status();
-        }
-
-        result.append(static_cast<RunTimeCppType<ResultType>>(value.value()));
-        return Status::OK();
-    }
-    default:
-        return Status::NotSupported(fmt::format("Cannot cast variant of type {} to {}",
-                                                VariantUtil::type_to_string(type), logical_type_to_string(ResultType)));
-    }
-}
-
 StatusOr<RunTimeCppType<TYPE_VARCHAR>> cast_variant_to_string(const Variant& variant, const VariantValue& value,
                                                               const cctz::time_zone& zone,
                                                               ColumnBuilder<TYPE_VARCHAR>& result) {
@@ -152,48 +91,6 @@ StatusOr<RunTimeCppType<TYPE_VARCHAR>> cast_variant_to_string(const Variant& var
         return Status::OK();
     }
     }
-}
-
-template <LogicalType ResultType, bool AllowThrowException>
-Status cast_variant_value_to(const Variant& variant, const cctz::time_zone& zone,
-                                                           ColumnBuilder<ResultType>& result) {
-    if constexpr (!lt_is_arithmetic<ResultType> && !lt_is_string<ResultType> && ResultType != TYPE_VARIANT) {
-        if constexpr (AllowThrowException) {
-            return Status::NotSupported(
-                    fmt::format("Cannot cast variant to type {}", logical_type_to_string(ResultType)));
-        }
-
-        result.append_null();
-        return Status::OK();
-    }
-
-    VariantValue variant_value = *variant.to_value();
-
-    if constexpr (ResultType == TYPE_VARIANT) {
-        // Directly return the variant value
-        result.append(std::move(variant_value));
-        return Status::OK();
-    }
-
-    Status status;
-    if constexpr (ResultType == TYPE_BOOLEAN) {
-        status = cast_variant_to_bool(variant, result);
-    } else if constexpr (lt_is_arithmetic<ResultType>) {
-        status = cast_variant_to_arithmetic<ResultType>(variant, result);
-    } else if constexpr (lt_is_string<ResultType>) {
-        status = cast_variant_to_string(variant, variant_value, zone, result);
-    }
-
-    if (!status.ok()) {
-        if constexpr (AllowThrowException) {
-            return Status::VariantError(fmt::format("Cannot cast variant to type {}: {}",
-                                                    logical_type_to_string(ResultType), status.to_string()));
-        } else {
-            result.append_null();
-        }
-    }
-
-    return Status::OK();
 }
 
 } // namespace starrocks
