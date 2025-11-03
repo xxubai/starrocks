@@ -247,10 +247,10 @@ FLATBUFFERS_SOURCE=flatbuffers-1.10.0
 FLATBUFFERS_MD5SUM="f7d19a3f021d93422b0bc287d7148cd2"
 
 # arrow
-ARROW_DOWNLOAD="https://github.com/apache/arrow/archive/refs/tags/apache-arrow-16.1.0.tar.gz"
-ARROW_NAME="arrow-apache-arrow-16.1.0.tar.gz"
-ARROW_SOURCE="arrow-apache-arrow-16.1.0"
-ARROW_MD5SUM="d9d019aaef586bd1a7493416d78954b9"
+ARROW_DOWNLOAD="https://github.com/apache/arrow/archive/refs/tags/apache-arrow-22.0.0.tar.gz"
+ARROW_NAME="arrow-apache-arrow-22.0.0.tar.gz"
+ARROW_SOURCE="arrow-apache-arrow-22.0.0"
+ARROW_MD5SUM="312cb05e19d361817b31f922148fb41e"
 
 # S2
 S2_DOWNLOAD="https://github.com/google/s2geometry/archive/v0.9.0.tar.gz"
@@ -439,12 +439,6 @@ SIMDUTF_DOWNLOAD="https://github.com/simdutf/simdutf/archive/refs/tags/v5.2.8.ta
 SIMDUTF_NAME="simdutf-5.2.8.tar.gz"
 SIMDUTF_SOURCE="simdutf-5.2.8"
 SIMDUTF_MD5SUM="731c78ab5a10c6073942dc93d5c4b04c"
-
-# tenann
-TENANN_DOWNLOAD="https://github.com/StarRocks/tenann/releases/download/v0.4.2-RELEASE/tenann-v0.4.2-RELEASE.tar.gz"
-TENANN_NAME="tenann-v0.4.2-RELEASE.tar.gz"
-TENANN_SOURCE="tenann-v0.4.2-RELEASE"
-TENANN_MD5SUM="40a00643d953982845901ae60766aad4"
 
 # icu
 ICU_DOWNLOAD="https://github.com/unicode-org/icu/releases/download/release-76-1/icu4c-76_1-src.zip"
