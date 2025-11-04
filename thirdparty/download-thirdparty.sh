@@ -529,6 +529,10 @@ if [[ -d $TP_SOURCE_DIR/$ARROW_SOURCE ]] ; then
         patch -p1 < $TP_PATCH_DIR/arrow-16.1.0-use-zstd-1.5.7.patch
         touch $PATCHED_MARK
     fi
+    if [ ! -f $PATCHED_MARK ] && [ $ARROW_SOURCE = "arrow-apache-arrow-22.0.0" ] ; then
+        patch -p1 < $TP_PATCH_DIR/arrow-22.0.0-parquet-map-key.patch
+        touch $PATCHED_MARK
+    fi
     cd -
     echo "Finished patching $ARROW_SOURCE"
 fi
